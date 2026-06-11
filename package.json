@@ -11,7 +11,9 @@
     "test:scrape": "node server/test-scrape.js"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "better-sqlite3": "^12.10.0",
+    "compression": "^1.8.1",
     "express": "^4.22.2"
   },
   "devDependencies": {

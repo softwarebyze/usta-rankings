@@ -5,7 +5,15 @@ import path from "path";
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 fs.mkdirSync(dataDir, { recursive: true });
 
-export const db = new Database(path.join(dataDir, "usta.db"));
+// Preview/ephemeral deploys have no volume: bootstrap from the bundled seed
+// snapshot so the app isn't empty on first boot.
+const dbPath = path.join(dataDir, "usta.db");
+const seedPath = path.join(process.cwd(), "seed", "usta.db");
+if (!fs.existsSync(dbPath) && fs.existsSync(seedPath)) {
+  fs.copyFileSync(seedPath, dbPath);
+}
+
+export const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 
 db.exec(`
@@ -82,6 +90,19 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
 CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id);
 `);
 
+// Migrations for databases created before these columns existed.
+try {
+  db.exec(`ALTER TABLE ranking_lists ADD COLUMN discipline TEXT DEFAULT 'Singles'`);
+} catch {}
+// "(Combined)" lists rank combined singles+doubles points and are returned by
+// BOTH the singles and doubles division searches (same list id) — they are a
+// discipline of their own. Variant is purely geographic: Sectional vs National.
+db.prepare(`UPDATE ranking_lists SET discipline='Combined' WHERE title LIKE '%(Combined)%'`).run();
+db.prepare(
+  `UPDATE ranking_lists SET variant='Sectional' WHERE section_code != '00' AND variant != 'Sectional'`
+).run();
+db.prepare(`UPDATE ranking_lists SET variant='National' WHERE section_code='00'`).run();
+
 export function upsertPlayer({ token, name, city, state }) {
   db.prepare(
     `INSERT INTO players (token, name, city, state) VALUES (?, ?, ?, ?)
@@ -90,15 +111,10 @@ export function upsertPlayer({ token, name, city, state }) {
   return db.prepare(`SELECT * FROM players WHERE token = ?`).get(token);
 }
 
-export function parseListMeta(title) {
-  // e.g. "2016 Florida Tentative Ranking (Jul) (Combined)"
-  const variant = /\(Combined\)/i.test(title)
-    ? "Combined"
-    : /\(Sectional\)/i.test(title)
-      ? "Sectional"
-      : /National/i.test(title)
-        ? "National"
-        : "Other";
+export function parseListMeta(title, sectionCode) {
+  // Variant is geographic scope; "(Combined)" titles are the combined
+  // singles+doubles discipline, not a separate scope.
+  const variant = sectionCode === "00" ? "National" : "Sectional";
   const typeMatch = title.match(
     /(Standing List|Tentative Ranking|Final Ranking|Endorsement List|Seeding List|Selection List|Qualifier List|Aging Up List|Bonus Points List|Points Race[^(]*|Year to Date[^(]*|12 Month Rolling[^(]*|Calendar Year[^(]*)/i
   );
@@ -106,10 +122,11 @@ export function parseListMeta(title) {
 }
 
 export function upsertRankingList(l) {
-  const { variant, listType } = parseListMeta(l.title);
+  const { variant, listType } = parseListMeta(l.title, l.sectionCode);
+  const discipline = /\(Combined\)/i.test(l.title) ? "Combined" : l.discipline || "Singles";
   db.prepare(
-    `INSERT INTO ranking_lists (list_id, section_code, section, division_code, division_label, age_group, year, month, title, list_type, variant, published_date)
-     VALUES (@listId, @sectionCode, @section, @divisionCode, @divisionLabel, @ageGroup, @year, @month, @title, @listType, @variant, @publishedDate)
+    `INSERT INTO ranking_lists (list_id, section_code, section, division_code, division_label, age_group, year, month, title, list_type, variant, published_date, discipline)
+     VALUES (@listId, @sectionCode, @section, @divisionCode, @divisionLabel, @ageGroup, @year, @month, @title, @listType, @variant, @publishedDate, @discipline)
      ON CONFLICT(list_id) DO UPDATE SET title=excluded.title, published_date=excluded.published_date`
-  ).run({ ...l, listType, variant });
+  ).run({ ...l, listType, variant, discipline });
 }
