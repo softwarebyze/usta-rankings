@@ -78,6 +78,7 @@ body {
 .searchbox button:disabled { opacity: 0.6; cursor: wait; }
 .search-hint { color: var(--chalk-dim); font-size: 13px; margin-top: 14px; }
 .search-hint b { color: var(--ball); font-weight: 600; }
+.search-hint a { color: var(--ball); }
 
 /* ---------- cards / tables ---------- */
 .panel {
@@ -205,3 +206,73 @@ footer.colophon {
   color: var(--chalk-dim); font-size: 12.5px; line-height: 1.7;
 }
 footer.colophon a { color: var(--chalk-dim); }
+
+/* ---------- landing: features + how it works ---------- */
+.features {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px; margin-top: 44px;
+}
+.feature-card {
+  border: 1px solid var(--court-line); background: rgba(10, 44, 33, 0.55);
+  padding: 22px 22px 18px;
+}
+.feature-card h3 {
+  font-family: var(--serif); font-weight: 600; font-size: 19px; margin: 0 0 8px;
+  color: var(--chalk);
+}
+.feature-card p { color: var(--chalk-dim); font-size: 13.5px; line-height: 1.6; margin: 0; }
+
+.how { margin-top: 50px; }
+.how h2 {
+  font-family: var(--serif); font-weight: 600; font-size: 24px; margin: 0 0 22px;
+  display: flex; align-items: center; gap: 12px;
+}
+.how h2::after { content: ""; flex: 1; height: 1px; background: var(--court-line); }
+.how-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 26px; }
+.how-num {
+  font-family: var(--serif); font-weight: 900; font-size: 34px; color: var(--ball);
+  line-height: 1; margin-bottom: 10px;
+}
+.how-step h4 { margin: 0 0 6px; font-size: 16px; font-weight: 700; }
+.how-step p { color: var(--chalk-dim); font-size: 13.5px; line-height: 1.6; margin: 0; }
+.how-more { margin-top: 22px; font-size: 14px; }
+.how-more a { color: var(--ball); }
+
+/* ---------- share popover ---------- */
+.share-wrap { position: relative; }
+.share-pop {
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 30; width: 360px;
+  background: var(--court-deep); border: 1px solid var(--court-line);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5); padding: 14px;
+  animation: rise 0.25s ease backwards;
+}
+.share-pop img { width: 100%; display: block; border: 1px solid var(--court-line); }
+.share-actions { display: flex; gap: 10px; margin-top: 12px; }
+.share-actions .btn { flex: 1; text-align: center; }
+.share-note { font-size: 11.5px; color: var(--chalk-dim); margin-top: 10px; text-align: center; }
+@media (max-width: 520px) { .share-pop { width: 300px; } }
+
+/* ---------- player extras ---------- */
+.best-card .dbl-note {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--court-line);
+  font-size: 12px; color: var(--chalk-dim);
+}
+.best-card .dbl-note b { color: var(--chalk); }
+.tag.dbl { margin-left: 8px; color: var(--gold); font-size: 10.5px; padding: 1px 7px; }
+.src-link {
+  color: var(--chalk-dim); font-family: var(--sans); font-size: 12px; font-weight: 600;
+  text-decoration: none; letter-spacing: 0.04em; white-space: nowrap;
+  border-bottom: 1px dashed var(--court-line);
+}
+.src-link:hover { color: var(--ball); border-color: var(--ball); }
+
+/* ---------- about page prose ---------- */
+.prose .panel p, .prose .panel li { color: var(--chalk-dim); font-size: 15px; line-height: 1.75; }
+.prose .panel p b, .prose .panel li b { color: var(--chalk); }
+.prose .panel a { color: var(--ball); }
+.prose .panel h3 {
+  font-family: var(--sans); font-size: 13px; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--gold); margin: 26px 0 8px;
+}
+.prose .panel ul, .prose .panel ol { padding-left: 22px; margin: 8px 0; }
+.prose .panel li { margin-bottom: 8px; }

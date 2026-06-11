@@ -1,6 +1,25 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../lib.js";
+import { api, niceName } from "../lib.js";
+
+const FEATURES = [
+  {
+    title: "Every list, one chart",
+    body: "Two decades of published standing, tentative and final ranking lists — singles and doubles — rebuilt into a single trajectory per age bracket.",
+  },
+  {
+    title: "Career-best, instantly",
+    body: "Your peak rank in the 10s, 12s, 14s, 16s and 18s, surfaced as cards the moment the history is built. No more digging through one list at a time.",
+  },
+  {
+    title: "Straight from the source",
+    body: "Nothing is estimated. Every snapshot is read from the official USTA TennisLink archive, and every row links back to the original published list.",
+  },
+  {
+    title: "Compare across eras",
+    body: "Overlay any players — or your own seasons — on one chart. Season overlay lines up different calendar years so a 2007 run and a 2016 run compare directly.",
+  },
+];
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -50,6 +69,8 @@ export default function Home() {
     }
   }
 
+  const demo = players.find((p) => p.snapshots > 0);
+
   return (
     <>
       <section className="hero">
@@ -59,7 +80,7 @@ export default function Home() {
         </h1>
         <p className="lede">
           Search the USTA junior ranking archive by name, and we'll dig through two decades of published sectional
-          and national standing lists to rebuild a player's complete ranking history — by age bracket, over time.
+          and national lists to rebuild a player's complete ranking history — by age bracket, over time.
         </p>
         <form className="searchbox" onSubmit={onSearch}>
           <input
@@ -76,7 +97,15 @@ export default function Home() {
               <b>Sweeping the archive year by year (2001–present)…</b> this takes ~10 seconds.
             </>
           ) : (
-            <>Searches every published ranking year from 2001 to today.</>
+            <>
+              Searches every published ranking year from 2001 to today.
+              {demo && (
+                <>
+                  {" "}
+                  Or <Link to={`/player/${demo.id}`}>see a live example →</Link>
+                </>
+              )}
+            </>
           )}
         </p>
       </section>
@@ -106,6 +135,45 @@ export default function Home() {
         </section>
       )}
 
+      <section className="features">
+        {FEATURES.map((f) => (
+          <div className="feature-card" key={f.title}>
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="how">
+        <h2>How it works</h2>
+        <div className="how-steps">
+          <div className="how-step">
+            <div className="how-num">1</div>
+            <h4>Search a name</h4>
+            <p>We sweep the official archive's player search across every ranking year since 2001.</p>
+          </div>
+          <div className="how-step">
+            <div className="how-num">2</div>
+            <h4>We read every list</h4>
+            <p>
+              Hundreds of published ranking lists per season are checked for the player — every bracket, singles and
+              doubles, sectional and national.
+            </p>
+          </div>
+          <div className="how-step">
+            <div className="how-num">3</div>
+            <h4>One shareable chart</h4>
+            <p>
+              The full trajectory with career-bests per bracket — and a share card built in. Every number links back
+              to its original USTA list.
+            </p>
+          </div>
+        </div>
+        <p className="how-more">
+          <Link to="/about">Read the full methodology →</Link>
+        </p>
+      </section>
+
       {players.length > 0 && (
         <section className="panel">
           <h2>Players on file</h2>
@@ -114,7 +182,7 @@ export default function Home() {
               <div>
                 <div className="result-name">
                   <Link to={`/player/${p.id}`} style={{ color: "inherit" }}>
-                    {p.name}
+                    {niceName(p.name)}
                   </Link>
                 </div>
                 <div className="result-meta">

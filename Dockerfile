@@ -13,6 +13,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY server/ ./server/
+COPY seed/ ./seed/
 COPY --from=web /app/web/dist ./web/dist
 ENV DATA_DIR=/data
 VOLUME /data

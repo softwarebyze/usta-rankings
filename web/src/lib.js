@@ -16,6 +16,22 @@ export function ageLabel(ageGroup) {
   return `${g} ${String(ageGroup).slice(1)}s`;
 }
 
+export function niceName(name) {
+  return String(name ?? "").includes(",")
+    ? name.split(",").map((s) => s.trim()).reverse().join(" ")
+    : name;
+}
+
+// Deep link back to the exact published list on USTA TennisLink (the original
+// source). TennisLink restores state from the URL fragment.
+export function sourceUrl(listId, rowP) {
+  const base = "https://tennislink.usta.com/tournaments/rankings/rankinghome.aspx";
+  if (rowP != null) {
+    return `${base}?Page=PlayerRecord&id=${listId}&p=${rowP}&Type=searchresults#&&s=4\\Page_RankingList\\ListID_${listId}\\PlayerID_${rowP}\\Year_\\Type_searchresults`;
+  }
+  return `${base}#&&s=2\\Page_RankingList\\ListID_${listId}`;
+}
+
 export async function api(path, opts) {
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
