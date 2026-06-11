@@ -43,6 +43,11 @@ function ShareButton({ player }) {
   async function copy() {
     await navigator.clipboard.writeText(url);
     setCopied(true);
+    api("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "share", playerId: player.id }),
+    }).catch(() => {});
     setTimeout(() => setCopied(false), 1800);
   }
   async function nativeShare() {

@@ -3,6 +3,10 @@ web/node_modules/
 web/dist/
 data/
 scratch/
-*.log
+scraper-go/bench-bin
+scraper-go/scan-bin
+scraper-go/**/bench-bin
+scraper-go/**/scan-bin
+bench/BENCHMARK.md*.log
 .DS_Store
 .env

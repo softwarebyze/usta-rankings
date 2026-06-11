@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, niceName } from "../lib.js";
 
 const FEATURES = [
@@ -28,7 +28,15 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [players, setPlayers] = useState([]);
   const [starting, setStarting] = useState(null);
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadMsg, setLeadMsg] = useState(null);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const ref = params.get("ref");
+
+  useEffect(() => {
+    if (ref) api("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "referral_land", ref }) }).catch(() => {});
+  }, [ref]);
 
   useEffect(() => {
     api("/api/players").then((d) => setPlayers(d.players)).catch(() => {});
@@ -60,7 +68,7 @@ export default function Home() {
       const d = await api("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(p),
+        body: JSON.stringify({ ...p, ref }),
       });
       navigate(`/player/${d.playerId}`);
     } catch (err) {
@@ -171,7 +179,43 @@ export default function Home() {
         </div>
         <p className="how-more">
           <Link to="/about">Read the full methodology →</Link>
+          {" · "}
+          <Link to="/pricing">See Pro features →</Link>
         </p>
+      </section>
+
+      <section className="panel">
+        <h2>Stay in the loop</h2>
+        <p className="lede" style={{ marginBottom: 0, fontSize: 15 }}>
+          New brackets, faster scrapes, and comparison tools — get an email when we ship.
+        </p>
+        <form
+          className="lead-box"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              await api("/api/leads", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: leadEmail, source: "landing", ref }),
+              });
+              setLeadMsg("You're on the list — thanks!");
+              setLeadEmail("");
+            } catch (err) {
+              setLeadMsg(err.message);
+            }
+          }}
+        >
+          <input
+            type="email"
+            placeholder="you@email.com"
+            value={leadEmail}
+            onChange={(e) => setLeadEmail(e.target.value)}
+            required
+          />
+          <button type="submit">Notify me</button>
+        </form>
+        {leadMsg && <p className="search-hint">{leadMsg}</p>}
       </section>
 
       {players.length > 0 && (

@@ -75,4 +75,20 @@ export const JUNIOR_DIVISIONS = {
 
 export const MIN_YEAR = 2001;
 
-export const REQUEST_DELAY_MS = 350;
+/** Polite delay before each postback per session (ms). Override with REQUEST_DELAY_MS. */
+export function getRequestDelayMs() {
+  return Number(process.env.REQUEST_DELAY_MS ?? 200);
+}
+
+/** Parallel list-scan sessions during a scrape job. Override with SCRAPE_WORKERS. */
+export function getScrapeWorkers() {
+  return Number(process.env.SCRAPE_WORKERS ?? 8);
+}
+
+/** "node" (default) or "go" — list scanning backend. */
+export function getScraperEngine() {
+  return process.env.SCRAPER_ENGINE === "go" ? "go" : "node";
+}
+
+// Legacy export for scripts that import the constant directly.
+export const REQUEST_DELAY_MS = getRequestDelayMs();

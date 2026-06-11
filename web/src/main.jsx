@@ -9,6 +9,8 @@ import "./styles.css";
 const Player = lazy(() => import("./pages/Player.jsx"));
 const Compare = lazy(() => import("./pages/Compare.jsx"));
 const About = lazy(() => import("./pages/About.jsx"));
+const Pricing = lazy(() => import("./pages/Pricing.jsx"));
+const Growth = lazy(() => import("./pages/Growth.jsx"));
 
 const fallback = (
   <div className="empty">
@@ -26,6 +28,8 @@ const router = createBrowserRouter([
       { path: "player/:id", element: lazyEl(<Player />) },
       { path: "compare", element: lazyEl(<Compare />) },
       { path: "about", element: lazyEl(<About />) },
+      { path: "pricing", element: lazyEl(<Pricing />) },
+      { path: "growth", element: lazyEl(<Growth />) },
     ],
   },
 ]);
