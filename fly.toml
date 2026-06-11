@@ -1,0 +1,25 @@
+app = "usta-rankings"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  DATA_DIR = "/data"
+  PORT = "3001"
+
+[mounts]
+  source = "usta_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
