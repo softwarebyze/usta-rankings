@@ -7,6 +7,8 @@ import { db, upsertPlayer } from "./db.js";
 import { searchPlayerAllYears } from "./search.js";
 import { enqueueScrape, resumeInterrupted } from "./scraper.js";
 import { renderOgCard } from "./og.js";
+import { trackEvent, captureLead, growthStats, socialCopy, referralForPlayer } from "./marketing.js";
+import { pricingInfo, exportRankingsCsv, proCheckoutUrl } from "./monetize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -28,14 +30,15 @@ app.post("/api/search", async (req, res) => {
 });
 
 app.post("/api/scrape", (req, res) => {
-  const { token, name, city, state, years } = req.body ?? {};
+  const { token, name, city, state, years, ref } = req.body ?? {};
   if (!token || !name) return res.status(400).json({ error: "token and name required" });
   const player = upsertPlayer({ token, name, city, state });
   if (Array.isArray(years) && years.length) {
     db.prepare(`UPDATE players SET years=? WHERE id=?`).run(JSON.stringify(years), player.id);
   }
+  trackEvent("scrape_start", { refCode: ref || null, playerId: player.id });
   const jobId = enqueueScrape(player.id);
-  res.json({ jobId, playerId: player.id });
+  res.json({ jobId, playerId: player.id, ref: referralForPlayer(player.id) });
 });
 
 app.get("/api/jobs/:id", (req, res) => {
@@ -115,6 +118,73 @@ app.get("/api/players/:id/og.png", (req, res) => {
     console.error("og render failed:", err);
     res.status(500).end();
   }
+});
+
+// --- marketing & monetization ---
+
+app.post("/api/leads", (req, res) => {
+  try {
+    captureLead(req.body?.email, { source: req.body?.source, refCode: req.body?.ref });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/events", (req, res) => {
+  const { type, ref, playerId, meta } = req.body ?? {};
+  if (!type) return res.status(400).json({ error: "type required" });
+  trackEvent(type, { refCode: ref, playerId, meta });
+  res.json({ ok: true });
+});
+
+app.get("/api/marketing/stats", (_req, res) => {
+  res.json(growthStats());
+});
+
+app.get("/api/players/:id/social", (req, res) => {
+  try {
+    const origin = `${req.protocol}://${req.get("host")}`;
+    res.json(socialCopy(req.params.id, origin));
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.get("/api/pricing", (req, res) => {
+  res.json(pricingInfo(`${req.protocol}://${req.get("host")}`));
+});
+
+app.get("/api/players/:id/export.csv", (req, res) => {
+  try {
+    const csv = exportRankingsCsv(req.params.id);
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", `attachment; filename="rankings-${req.params.id}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(402).json({ error: err.message, checkoutUrl: proCheckoutUrl(`${req.protocol}://${req.get("host")}`) });
+  }
+});
+
+app.get("/r/:code", (req, res) => {
+  trackEvent("referral_click", { refCode: req.params.code });
+  res.redirect(`/?ref=${encodeURIComponent(req.params.code)}`);
+});
+
+app.get("/sitemap.xml", (_req, res) => {
+  const players = db.prepare(`SELECT id, last_scraped_at FROM players ORDER BY id`).all();
+  const origin = process.env.SITE_URL || "https://usta-rankings.fly.dev";
+  const urls = ["/", "/compare", "/about", "/pricing", "/growth", ...players.map((p) => `/player/${p.id}`)];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((u) => `  <url><loc>${origin}${u}</loc></url>`).join("\n")}
+</urlset>`;
+  res.type("application/xml").send(xml);
+});
+
+app.get("/robots.txt", (_req, res) => {
+  const origin = process.env.SITE_URL || "https://usta-rankings.fly.dev";
+  res.type("text/plain").send(`User-agent: *\nAllow: /\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 // --- static frontend, with per-player OG meta injection ---

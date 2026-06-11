@@ -1,7 +1,7 @@
 // Pure-HTTP client for the legacy USTA TennisLink rankings site (ASP.NET
 // WebForms + MS AJAX UpdatePanels). No headless browser required: we keep a
 // form-state "session" and replay the async postbacks the page JS would send.
-import { BASE_URL, USER_AGENT, REQUEST_DELAY_MS } from "./constants.js";
+import { BASE_URL, USER_AGENT, getRequestDelayMs } from "./constants.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -100,7 +100,7 @@ export class UstaSession {
 
   async post(trigger, { eventTarget = "", eventArgument = "", extra = {} } = {}) {
     if (!this.ready) await this.init();
-    await sleep(REQUEST_DELAY_MS);
+    await sleep(getRequestDelayMs());
     const f = { ...this.fields };
     f["ctl00$ScriptManager1"] = `ctl00$mainContent$UpdatePanel_RankingHome|${trigger}`;
     f["__EVENTTARGET"] = eventTarget;

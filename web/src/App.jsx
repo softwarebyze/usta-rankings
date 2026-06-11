@@ -12,6 +12,7 @@ export default function App() {
             Search
           </NavLink>
           <NavLink to="/compare">Compare</NavLink>
+          <NavLink to="/pricing">Pricing</NavLink>
           <NavLink to="/about">About</NavLink>
         </nav>
       </header>

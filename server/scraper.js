@@ -2,7 +2,8 @@
 // player and extracts their row from each list.
 import { db, upsertRankingList } from "./db.js";
 import { UstaSession, searchPlayersForYear, searchRankingLists, findPlayerInList } from "./usta.js";
-import { JUNIOR_DIVISIONS, STATE_TO_SECTIONS, SECTIONS, MIN_YEAR } from "./constants.js";
+import { JUNIOR_DIVISIONS, STATE_TO_SECTIONS, SECTIONS, MIN_YEAR, getScrapeWorkers, getScraperEngine } from "./constants.js";
+import { scanListsGo } from "./go-bridge.js";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -201,36 +202,80 @@ async function runJob(job) {
   }
 
   let qi = 0;
-  const WORKERS = 3;
-  async function worker() {
-    const sess = { s: new UstaSession() };
-    await sess.s.init();
-    for (;;) {
+  const WORKERS = getScrapeWorkers();
+  const useGo = getScraperEngine() === "go";
+
+  if (useGo && queue.length > 0) {
+    // Go engine: batch remaining queue through the native scanner.
+    const batch = [];
+    while (qi < queue.length) {
       const m = queue[qi++];
-      if (!m) return;
       if (shouldSkip(m)) {
         markChecked.run(player.id, m.listId, 0);
         checked++;
-        if (checked % 20 === 0) bump();
         continue;
       }
-      const { row } = await withRetries(sess, (s) => findPlayerInList(s, m.listId, lastName, player.token));
-      if (row) {
-        insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
-        found++;
-        maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
-        hitYearBrackets.add(`${m.year}:${m.ageGroup}:${m.discipline}`);
-        if (!lockedGender && m.gender) {
-          lockedGender = m.gender;
-          db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
-        }
-      }
-      markChecked.run(player.id, m.listId, row ? 1 : 0);
-      checked++;
+      batch.push(m);
+    }
+    if (batch.length) {
+      setPhase(job.id, `Scanning ranking lists (Go, ${batch.length} lists)`);
+      const hits = await scanListsGo({
+        listIds: batch.map((m) => m.listId),
+        lastName,
+        token: player.token,
+        onResult(listId, row) {
+          const m = batch.find((b) => b.listId === listId);
+          if (row && m) {
+            insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
+            found++;
+            maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
+            hitYearBrackets.add(`${m.year}:${m.ageGroup}:${m.discipline}`);
+            if (!lockedGender && m.gender) {
+              lockedGender = m.gender;
+              db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
+            }
+            markChecked.run(player.id, m.listId, 1);
+          } else {
+            markChecked.run(player.id, m.listId, 0);
+          }
+          checked++;
+          if (checked % 10 === 0) bump();
+        },
+      });
+      void hits;
       bump();
     }
+  } else {
+    async function worker() {
+      const sess = { s: new UstaSession() };
+      await sess.s.init();
+      for (;;) {
+        const m = queue[qi++];
+        if (!m) return;
+        if (shouldSkip(m)) {
+          markChecked.run(player.id, m.listId, 0);
+          checked++;
+          if (checked % 20 === 0) bump();
+          continue;
+        }
+        const { row } = await withRetries(sess, (s) => findPlayerInList(s, m.listId, lastName, player.token));
+        if (row) {
+          insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
+          found++;
+          maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
+          hitYearBrackets.add(`${m.year}:${m.ageGroup}:${m.discipline}`);
+          if (!lockedGender && m.gender) {
+            lockedGender = m.gender;
+            db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
+          }
+        }
+        markChecked.run(player.id, m.listId, row ? 1 : 0);
+        checked++;
+        bump();
+      }
+    }
+    await Promise.all(Array.from({ length: WORKERS }, worker));
   }
-  await Promise.all(Array.from({ length: WORKERS }, worker));
   bump();
 
   db.prepare(`UPDATE players SET last_scraped_at=datetime('now') WHERE id=?`).run(player.id);

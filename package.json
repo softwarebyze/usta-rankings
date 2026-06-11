@@ -8,7 +8,10 @@
     "dev": "node server/index.js",
     "start": "node server/index.js",
     "build:web": "cd web && npm run build",
-    "test:scrape": "node server/test-scrape.js"
+    "test:scrape": "node server/test-scrape.js",
+    "bench": "node bench/run.mjs",
+    "bench:node": "node bench/node.mjs",
+    "bench:go": "cd scraper-go && go run ./cmd/bench"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

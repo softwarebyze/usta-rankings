@@ -103,6 +103,32 @@ db.prepare(
 ).run();
 db.prepare(`UPDATE ranking_lists SET variant='National' WHERE section_code='00'`).run();
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS marketing_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  ref_code TEXT,
+  player_id INTEGER,
+  meta TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  source TEXT,
+  ref_code TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+CREATE TABLE IF NOT EXISTS referrals (
+  code TEXT PRIMARY KEY,
+  player_id INTEGER,
+  label TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_events_type ON marketing_events(event_type);
+`);
+
 export function upsertPlayer({ token, name, city, state }) {
   db.prepare(
     `INSERT INTO players (token, name, city, state) VALUES (?, ?, ?, ?)
