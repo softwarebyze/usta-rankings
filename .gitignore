@@ -5,6 +5,8 @@ data/
 scratch/
 scraper-go/bench-bin
 scraper-go/scan-bin
+scraper-go/**/bench-bin
+scraper-go/**/scan-bin
 bench/BENCHMARK.md*.log
 .DS_Store
 .env
