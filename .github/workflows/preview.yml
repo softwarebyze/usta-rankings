@@ -1,0 +1,41 @@
+name: PR preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: preview-${{ github.event.number }}
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  APP: usta-rankings-pr-${{ github.event.number }}
+
+jobs:
+  deploy-preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Create app if missing
+        run: flyctl apps create "$APP" --org personal || true
+      - name: Deploy preview
+        run: |
+          CONFIG=fly.toml
+          [ -f fly.preview.toml ] && CONFIG=fly.preview.toml
+          flyctl deploy --app "$APP" --config "$CONFIG" --remote-only --ha=false
+      - name: Comment preview URL
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            :rocket: Preview deployed: https://${{ env.APP }}.fly.dev
+
+  destroy-preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl apps destroy "$APP" --yes || true
