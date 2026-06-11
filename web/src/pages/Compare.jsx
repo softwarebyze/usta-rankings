@@ -33,7 +33,11 @@ export default function Compare() {
       .map((id, i) => {
         const p = players.find((pl) => String(pl.id) === id);
         const rows = (data[id] ?? []).filter(
-          (r) => r.date && String(r.age_group).slice(1) === bracket && r.variant === "Combined"
+          (r) =>
+            r.date &&
+            String(r.age_group).slice(1) === bracket &&
+            r.variant === "Combined" &&
+            /Ranking/.test(r.list_type)
         );
         return {
           key: id,

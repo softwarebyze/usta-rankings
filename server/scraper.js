@@ -129,52 +129,107 @@ async function runJob(job) {
     }
   }
 
-  // Phase 3: check each list for the player's row
+  // Phase 3: check each list for the player's row.
+  // Pruning rules keep this tractable (a season can have 600+ published lists):
+  //  - once the player's gender is known, skip the other gender's divisions
+  //  - players never age DOWN: skip brackets below the max bracket seen in earlier years
+  //  - National lists are only checked for (year, bracket) where a sectional hit exists
   const alreadyChecked = new Set(
     db.prepare(`SELECT list_id FROM checked_lists WHERE player_id=?`).all(player.id).map((r) => r.list_id)
   );
-  const toCheck = [...candidateListIds].filter((id) => !alreadyChecked.has(id));
+  const candidateIds = [...candidateListIds];
+  const listMeta = (
+    candidateIds.length
+      ? db
+          .prepare(
+            `SELECT list_id, age_group, year, section_code FROM ranking_lists WHERE list_id IN (${candidateIds.map(() => "?").join(",")})`
+          )
+          .all(...candidateIds)
+      : []
+  )
+    .map((r) => ({
+      listId: r.list_id,
+      ageGroup: r.age_group,
+      gender: r.age_group?.[0],
+      bracket: parseInt(String(r.age_group).slice(1), 10) || 0,
+      year: r.year,
+      national: r.section_code === "00",
+    }));
+
+  // sectional first (year asc, bracket asc), national afterwards
+  const queue = listMeta
+    .filter((m) => !alreadyChecked.has(m.listId))
+    .sort(
+      (a, b) =>
+        Number(a.national) - Number(b.national) || a.year - b.year || a.bracket - b.bracket || a.listId - b.listId
+    );
+
   let found = db.prepare(`SELECT COUNT(*) c FROM rankings WHERE player_id=?`).get(player.id).c;
-  db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(toCheck.length, found, job.id);
+  db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(queue.length, found, job.id);
   setPhase(job.id, "Scanning ranking lists");
 
-  // Prioritize: check gender-matching lists; if gender unknown, alternate B/G until detected.
-  const meta = new Map(
-    db.prepare(`SELECT list_id, age_group FROM ranking_lists`).all().map((r) => [r.list_id, r.age_group])
+  // hits per year (max bracket) and per year+bracket, seeded from previous runs
+  const maxBracketByYear = new Map();
+  const hitYearBrackets = new Set();
+  for (const r of db
+    .prepare(
+      `SELECT l.year, l.age_group FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id WHERE r.player_id=?`
+    )
+    .all(player.id)) {
+    const b = parseInt(String(r.age_group).slice(1), 10) || 0;
+    maxBracketByYear.set(r.year, Math.max(maxBracketByYear.get(r.year) ?? 0, b));
+    hitYearBrackets.add(`${r.year}:${r.age_group}`);
+  }
+
+  const markChecked = db.prepare(`INSERT OR REPLACE INTO checked_lists (player_id, list_id, found) VALUES (?,?,?)`);
+  const insertRanking = db.prepare(
+    `INSERT INTO rankings (player_id, list_id, rank, points, row_p, district) VALUES (?,?,?,?,?,?)
+     ON CONFLICT(player_id, list_id) DO UPDATE SET rank=excluded.rank, points=excluded.points`
   );
-  toCheck.sort((a, b) => a - b);
 
   let checked = 0;
-  for (const listId of toCheck) {
-    const ag = meta.get(listId) || "";
-    if (lockedGender && !ag.startsWith(lockedGender)) {
-      db.prepare(`INSERT OR REPLACE INTO checked_lists (player_id, list_id, found) VALUES (?,?,0)`).run(
-        player.id,
-        listId
-      );
-      checked++;
-      continue;
-    }
-    const { row } = await withRetries(session, (s) => findPlayerInList(s, listId, lastName, player.token));
-    if (row) {
-      db.prepare(
-        `INSERT INTO rankings (player_id, list_id, rank, points, row_p, district) VALUES (?,?,?,?,?,?)
-         ON CONFLICT(player_id, list_id) DO UPDATE SET rank=excluded.rank, points=excluded.points`
-      ).run(player.id, listId, row.rank, row.points, row.rowP, row.district);
-      found++;
-      if (!lockedGender && ag) {
-        lockedGender = ag[0];
-        db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
-      }
-    }
-    db.prepare(`INSERT OR REPLACE INTO checked_lists (player_id, list_id, found) VALUES (?,?,?)`).run(
-      player.id,
-      listId,
-      row ? 1 : 0
-    );
-    checked++;
+  const bump = () =>
     db.prepare(`UPDATE scrape_jobs SET lists_checked=?, rankings_found=? WHERE id=?`).run(checked, found, job.id);
+
+  function shouldSkip(m) {
+    if (lockedGender && m.gender !== lockedGender) return true;
+    for (const [y, b] of maxBracketByYear) if (y < m.year && m.bracket < b) return true;
+    if (m.national && !hitYearBrackets.has(`${m.year}:${m.ageGroup}`)) return true;
+    return false;
   }
+
+  let qi = 0;
+  const WORKERS = 3;
+  async function worker() {
+    const sess = { s: new UstaSession() };
+    await sess.s.init();
+    for (;;) {
+      const m = queue[qi++];
+      if (!m) return;
+      if (shouldSkip(m)) {
+        markChecked.run(player.id, m.listId, 0);
+        checked++;
+        if (checked % 20 === 0) bump();
+        continue;
+      }
+      const { row } = await withRetries(sess, (s) => findPlayerInList(s, m.listId, lastName, player.token));
+      if (row) {
+        insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
+        found++;
+        maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
+        hitYearBrackets.add(`${m.year}:${m.ageGroup}`);
+        if (!lockedGender && m.gender) {
+          lockedGender = m.gender;
+          db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
+        }
+      }
+      markChecked.run(player.id, m.listId, row ? 1 : 0);
+      checked++;
+      bump();
+    }
+  }
+  await Promise.all(Array.from({ length: WORKERS }, worker));
+  bump();
 
   db.prepare(`UPDATE players SET last_scraped_at=datetime('now') WHERE id=?`).run(player.id);
   db.prepare(

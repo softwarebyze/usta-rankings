@@ -5,6 +5,14 @@ import RankChart from "../RankChart.jsx";
 
 const VARIANTS = ["Combined", "Sectional", "National", "Other"];
 
+const TYPE_GROUPS = {
+  "Tentative Ranking": "Ranking",
+  "Final Ranking": "Ranking",
+  "Standing List": "Standing",
+  "Endorsement List": "Endorsement",
+};
+const typeGroup = (t) => TYPE_GROUPS[t] ?? "Other";
+
 export default function Player() {
   const { id } = useParams();
   const [player, setPlayer] = useState(null);
@@ -12,6 +20,7 @@ export default function Player() {
   const [rankings, setRankings] = useState([]);
   const [agesOn, setAgesOn] = useState(null); // null = all
   const [variantsOn, setVariantsOn] = useState(new Set(VARIANTS));
+  const [typesOn, setTypesOn] = useState(null); // null = auto (Ranking if available)
 
   const refresh = useCallback(async () => {
     const d = await api(`/api/players/${id}`);
@@ -56,11 +65,21 @@ export default function Player() {
     return [...best.entries()].sort().map(([ag, r]) => ({ ag, ...r }));
   }, [rankings]);
 
+  const typeGroupsPresent = useMemo(
+    () => [...new Set(rankings.map((r) => typeGroup(r.list_type)))].sort(),
+    [rankings]
+  );
+  const activeTypes = useMemo(() => {
+    if (typesOn) return typesOn;
+    return new Set(typeGroupsPresent.includes("Ranking") ? ["Ranking"] : typeGroupsPresent);
+  }, [typesOn, typeGroupsPresent]);
+
   const series = useMemo(() => {
     const visibleAges = agesOn ?? new Set(ageGroups);
     const groups = new Map();
     for (const r of rankings) {
       if (!r.date || !visibleAges.has(r.age_group) || !variantsOn.has(r.variant)) continue;
+      if (!activeTypes.has(typeGroup(r.list_type))) continue;
       const key = `${r.age_group} ${r.variant}`;
       if (!groups.has(key))
         groups.set(key, {
@@ -84,7 +103,7 @@ export default function Player() {
     return [...groups.values()]
       .map((g) => ({ ...g, points: g.points.sort((a, b) => a.x - b.x) }))
       .sort((a, b) => a.key.localeCompare(b.key));
-  }, [rankings, agesOn, variantsOn, ageGroups]);
+  }, [rankings, agesOn, variantsOn, ageGroups, activeTypes]);
 
   if (!player) return <div className="empty"><span className="spinner" /> Loading…</div>;
 
@@ -182,6 +201,24 @@ export default function Player() {
                 onClick={() => toggleVariant(v)}
               >
                 {v}
+              </span>
+            );
+          })}
+          <span style={{ width: 14 }} />
+          {typeGroupsPresent.map((t) => {
+            const on = activeTypes.has(t);
+            return (
+              <span
+                key={t}
+                className={`chip ${on ? "on" : ""}`}
+                style={on ? { background: "#e8b54a", borderColor: "#e8b54a" } : {}}
+                onClick={() => {
+                  const next = new Set(activeTypes);
+                  next.has(t) ? next.delete(t) : next.add(t);
+                  setTypesOn(next);
+                }}
+              >
+                {t} lists
               </span>
             );
           })}
