@@ -1,0 +1,20 @@
+{
+  "name": "usta-rankings",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "USTA junior tennis ranking history tracker",
+  "scripts": {
+    "dev": "node server/index.js",
+    "start": "node server/index.js",
+    "build:web": "cd web && npm run build",
+    "test:scrape": "node server/test-scrape.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "express": "^4.22.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.57.0"
+  }
+}
