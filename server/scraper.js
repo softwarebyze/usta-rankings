@@ -132,10 +132,13 @@ async function runJob(job) {
   // Phase 3: check each list for the player's row.
   // Pruning rules keep this tractable (a season can have 600+ published lists):
   //  - once the player's gender is known, skip the other gender's divisions
-  //  - players never age DOWN: skip brackets below the max bracket seen in earlier years
   //  - National lists are only checked for (year, bracket) where a sectional hit exists
+  // Lists previously checked with found=0 are retried (covers skipped brackets and transient misses).
   const alreadyChecked = new Set(
-    db.prepare(`SELECT list_id FROM checked_lists WHERE player_id=?`).all(player.id).map((r) => r.list_id)
+    db
+      .prepare(`SELECT list_id FROM checked_lists WHERE player_id=? AND found=1`)
+      .all(player.id)
+      .map((r) => r.list_id)
   );
   const candidateIds = [...candidateListIds];
   const listMeta = (
@@ -168,16 +171,13 @@ async function runJob(job) {
   db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(queue.length, found, job.id);
   setPhase(job.id, "Scanning ranking lists");
 
-  // hits per year (max bracket) and per year+bracket, seeded from previous runs
-  const maxBracketByYear = new Map();
+  // Sectional hits per (year, bracket), seeded from previous runs.
   const hitYearBrackets = new Set();
   for (const r of db
     .prepare(
       `SELECT l.year, l.age_group FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id WHERE r.player_id=?`
     )
     .all(player.id)) {
-    const b = parseInt(String(r.age_group).slice(1), 10) || 0;
-    maxBracketByYear.set(r.year, Math.max(maxBracketByYear.get(r.year) ?? 0, b));
     hitYearBrackets.add(`${r.year}:${r.age_group}`);
   }
 
@@ -193,7 +193,6 @@ async function runJob(job) {
 
   function shouldSkip(m) {
     if (lockedGender && m.gender !== lockedGender) return true;
-    for (const [y, b] of maxBracketByYear) if (y < m.year && m.bracket < b) return true;
     if (m.national && !hitYearBrackets.has(`${m.year}:${m.ageGroup}`)) return true;
     return false;
   }
@@ -216,7 +215,6 @@ async function runJob(job) {
       if (row) {
         insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
         found++;
-        maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
         hitYearBrackets.add(`${m.year}:${m.ageGroup}`);
         if (!lockedGender && m.gender) {
           lockedGender = m.gender;
