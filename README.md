@@ -26,6 +26,10 @@ The USTA TennisLink ranking archive is a legacy ASP.NET WebForms app driven by
 
 Scrape jobs run on a DB-backed in-process queue with progress the frontend polls.
 
+**Historical data is scraped once.** Confirmed list rows (`checked_lists.found = 1`) are never
+re-fetched from USTA; player pages read from SQLite only. See
+[docs/WORKFLOW.md](docs/WORKFLOW.md) for the full data lifecycle, deploy behavior, and cache rules.
+
 ## Stack
 
 - **Backend**: Node 22 + Express + better-sqlite3 (SQLite, WAL)
@@ -54,3 +58,7 @@ Zachary Ebenfeld (ListIDs 1626410/1682666/1756446 → ranks 75/63/88).
 - `POST /api/scrape` `{token, name, city, state, years}` → `{jobId, playerId}`
 - `GET /api/jobs/:id` → status/phase/progress
 - `GET /api/players` · `GET /api/players/:id` · `GET /api/players/:id/rankings`
+
+## Documentation
+
+- [docs/WORKFLOW.md](docs/WORKFLOW.md) — database tables, scrape-once semantics, what happens on deploy
