@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, ageColor, ageLabel, fmtDate } from "../lib.js";
+import { api, ageColor, ageLabel, fmtDate, niceName } from "../lib.js";
 import RankChart from "../RankChart.jsx";
 
 const VARIANTS = ["Combined", "Sectional", "National", "Other"];
@@ -12,6 +12,66 @@ const TYPE_GROUPS = {
   "Endorsement List": "Endorsement",
 };
 const typeGroup = (t) => TYPE_GROUPS[t] ?? "Other";
+
+function ShareButton({ player }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [anchorLeft, setAnchorLeft] = useState(false);
+  const ref = useRef(null);
+
+  function toggle() {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setAnchorLeft(rect.right < 400);
+    }
+    setOpen((o) => !o);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const url = window.location.href;
+  async function copy() {
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+  async function nativeShare() {
+    try {
+      await navigator.share({ title: `${niceName(player.name)} — USTA Junior Ranking History`, url });
+    } catch {}
+  }
+
+  return (
+    <div className="share-wrap" ref={ref}>
+      <button className="btn" onClick={toggle}>
+        Share ↗
+      </button>
+      {open && (
+        <div className="share-pop" style={anchorLeft ? { left: 0, right: "auto" } : undefined}>
+          <img src={`/api/players/${player.id}/og.png`} alt="Share card preview" loading="lazy" />
+          <div className="share-actions">
+            <button className="btn solid" onClick={copy}>
+              {copied ? "Copied!" : "Copy link"}
+            </button>
+            {!!navigator.share && (
+              <button className="btn" onClick={nativeShare}>
+                Share…
+              </button>
+            )}
+          </div>
+          <div className="share-note">Links unfurl with this card on iMessage, X, Slack &amp; co.</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Player() {
   const { id } = useParams();
@@ -126,7 +186,7 @@ export default function Player() {
     <>
       <div className="player-head">
         <div>
-          <h1>{player.name}</h1>
+          <h1>{niceName(player.name)}</h1>
           <div className="player-sub">
             {player.city}, {player.state}
             <span className="sep">|</span>
@@ -139,6 +199,7 @@ export default function Player() {
             )}
           </div>
         </div>
+        <ShareButton player={player} />
       </div>
 
       {jobActive && (

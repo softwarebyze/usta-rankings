@@ -16,6 +16,12 @@ export function ageLabel(ageGroup) {
   return `${g} ${String(ageGroup).slice(1)}s`;
 }
 
+export function niceName(name) {
+  return String(name ?? "").includes(",")
+    ? name.split(",").map((s) => s.trim()).reverse().join(" ")
+    : name;
+}
+
 export async function api(path, opts) {
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
