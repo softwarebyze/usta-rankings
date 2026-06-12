@@ -17,6 +17,90 @@ const AGE_COLORS = { 10: "#9ad1ff", 12: "#5fd0a5", 14: "#d8e63a", 16: "#e8b54a",
 const esc = (s) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+function rasterize(svg, W) {
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: "width", value: W },
+    font: { fontFiles: FONT_FILES, loadSystemFonts: false, defaultFontFamily: "Archivo" },
+  });
+  return resvg.render().asPng();
+}
+
+function courtBackground(W, H) {
+  return `
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f3d2e"/>
+      <stop offset="1" stop-color="#0a2c21"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="-0.1" r="0.9">
+      <stop offset="0" stop-color="#d8e63a" stop-opacity="0.13"/>
+      <stop offset="0.6" stop-color="#d8e63a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/>
+  ${[120, 240, 360, 480].map((y) => `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>`).join("")}
+  ${[200, 400, 600, 800, 1000].map((x) => `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="rgba(255,255,255,0.05)" stroke-width="2"/>`).join("")}
+  <rect width="${W}" height="${H}" fill="url(#glow)"/>`;
+}
+
+function siteHeader(W) {
+  return `
+  <text x="60" y="86" font-family="Fraunces Black" font-size="40" fill="#f4f1e8">Baseline<tspan fill="#d8e63a">.</tspan></text>
+  <text x="${W - 60}" y="84" text-anchor="end" font-family="Archivo" font-weight="700" font-size="20" letter-spacing="3" fill="#c9c4b4">USTA JUNIOR RANKING HISTORY</text>
+  <line x1="60" y1="112" x2="${W - 60}" y2="112" stroke="rgba(255,255,255,0.14)" stroke-width="2"/>`;
+}
+
+export function renderHomeOgCard() {
+  const W = 1200;
+  const H = 630;
+
+  const brackets = [10, 12, 14, 16, 18];
+  const pillY = H - 88;
+  const pillW = 88;
+  const pillGap = 20;
+  const pillsW = brackets.length * pillW + (brackets.length - 1) * pillGap;
+  const pillStart = (W - pillsW) / 2;
+
+  const pills = brackets
+    .map((n, i) => {
+      const x = pillStart + i * (pillW + pillGap);
+      const color = AGE_COLORS[n];
+      return `
+      <rect x="${x}" y="${pillY}" width="${pillW}" height="44" rx="22" fill="#0a2c21" stroke="rgba(255,255,255,0.14)"/>
+      <circle cx="${x + 22}" cy="${pillY + 22}" r="8" fill="${color}"/>
+      <text x="${x + 38}" y="${pillY + 29}" font-family="Archivo" font-weight="700" font-size="20" fill="${color}">${n}s</text>`;
+    })
+    .join("");
+
+  const chartPoints = [
+    [180, 420],
+    [320, 360],
+    [460, 380],
+    [600, 280],
+    [740, 300],
+    [880, 200],
+    [1020, 220],
+  ];
+  const chartPath = chartPoints.map(([x, y], i) => `${i ? "L" : "M"}${x},${y}`).join(" ");
+
+  const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+  ${courtBackground(W, H)}
+  ${siteHeader(W)}
+
+  <text x="${W / 2}" y="248" text-anchor="middle" font-family="Fraunces Black" font-size="72" fill="#f4f1e8">Every ranking you</text>
+  <text x="${W / 2}" y="332" text-anchor="middle" font-family="Fraunces Black" font-size="72" fill="#f4f1e8">ever earned. <tspan fill="#d8e63a">One chart.</tspan></text>
+  <text x="${W / 2}" y="396" text-anchor="middle" font-family="Archivo" font-size="26" fill="#c9c4b4">Search two decades of published USTA junior ranking lists</text>
+  <text x="${W / 2}" y="432" text-anchor="middle" font-family="Archivo" font-size="26" fill="#c9c4b4">Best rank per age bracket, charted over time.</text>
+
+  <path d="${chartPath}" fill="none" stroke="#d8e63a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/>
+  ${chartPoints.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7" fill="#d8e63a" opacity="0.5"/>`).join("")}
+
+  ${pills}
+</svg>`;
+
+  return rasterize(svg, W);
+}
+
 /**
  * player: { name, city, state }
  * bests:  [{ ageGroup: 'B12', rank: 2, year: 2008 }] sorted by bracket
@@ -57,24 +141,8 @@ export function renderOgCard(player, bests) {
   const loc = [player.city, player.state].filter(Boolean).join(", ");
 
   const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0f3d2e"/>
-      <stop offset="1" stop-color="#0a2c21"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="-0.1" r="0.9">
-      <stop offset="0" stop-color="#d8e63a" stop-opacity="0.13"/>
-      <stop offset="0.6" stop-color="#d8e63a" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect width="${W}" height="${H}" fill="url(#bg)"/>
-  ${[120, 240, 360, 480].map((y) => `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>`).join("")}
-  ${[200, 400, 600, 800, 1000].map((x) => `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="rgba(255,255,255,0.05)" stroke-width="2"/>`).join("")}
-  <rect width="${W}" height="${H}" fill="url(#glow)"/>
-
-  <text x="60" y="86" font-family="Fraunces Black" font-size="40" fill="#f4f1e8">Baseline<tspan fill="#d8e63a">.</tspan></text>
-  <text x="${W - 60}" y="84" text-anchor="end" font-family="Archivo" font-weight="700" font-size="20" letter-spacing="3" fill="#c9c4b4">USTA JUNIOR RANKING HISTORY</text>
-  <line x1="60" y1="112" x2="${W - 60}" y2="112" stroke="rgba(255,255,255,0.14)" stroke-width="2"/>
+  ${courtBackground(W, H)}
+  ${siteHeader(W)}
 
   <text x="${W / 2}" y="218" text-anchor="middle" font-family="Fraunces Black" font-size="${nameSize}" fill="#f4f1e8">${esc(name)}</text>
   ${loc ? `<text x="${W / 2}" y="262" text-anchor="middle" font-family="Archivo" font-size="26" fill="#c9c4b4">${esc(loc)}</text>` : ""}
@@ -82,9 +150,5 @@ export function renderOgCard(player, bests) {
   ${cardSvg}
 </svg>`;
 
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width", value: W },
-    font: { fontFiles: FONT_FILES, loadSystemFonts: false, defaultFontFamily: "Archivo" },
-  });
-  return resvg.render().asPng();
+  return rasterize(svg, W);
 }

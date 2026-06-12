@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { db, upsertPlayer } from "./db.js";
 import { searchPlayerAllYears } from "./search.js";
 import { enqueueScrape, resumeInterrupted } from "./scraper.js";
-import { renderOgCard } from "./og.js";
+import { renderOgCard, renderHomeOgCard } from "./og.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -116,6 +116,18 @@ app.get("/api/players/:id/og.png", (req, res) => {
   }
 });
 
+app.get("/api/og.png", (_req, res) => {
+  try {
+    const png = renderHomeOgCard();
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(png);
+  } catch (err) {
+    console.error("home og render failed:", err);
+    res.status(500).end();
+  }
+});
+
 // --- static frontend, with per-player OG meta injection ---
 const dist = path.join(__dirname, "..", "web", "dist");
 const indexHtml = () => fs.readFileSync(path.join(dist, "index.html"), "utf8");
@@ -186,6 +198,7 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
   sendIndex(res, {
     title: "Baseline — USTA Junior Ranking History",
     description: DEFAULT_DESC,
+    image: `${origin}/api/og.png`,
     url: `${origin}${req.path}`,
   });
 });
