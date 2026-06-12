@@ -45,21 +45,31 @@ export const STATE_TO_SECTIONS = {
   PR: ["05"], VI: ["05"],
 };
 
-// Junior singles divisions (Division dropdown values)
+// Junior divisions (Division dropdown values), singles + doubles
 export const JUNIOR_DIVISIONS = {
   B: [
-    { code: "D1001", label: "Boys' 18 Singles", ageGroup: "B18" },
-    { code: "D1003", label: "Boys' 16 Singles", ageGroup: "B16" },
-    { code: "D1005", label: "Boys' 14 Singles", ageGroup: "B14" },
-    { code: "D1007", label: "Boys' 12 Singles", ageGroup: "B12" },
-    { code: "D1009", label: "Boys' 10 Singles", ageGroup: "B10" },
+    { code: "D1001", label: "Boys' 18 Singles", ageGroup: "B18", discipline: "Singles" },
+    { code: "D1003", label: "Boys' 16 Singles", ageGroup: "B16", discipline: "Singles" },
+    { code: "D1005", label: "Boys' 14 Singles", ageGroup: "B14", discipline: "Singles" },
+    { code: "D1007", label: "Boys' 12 Singles", ageGroup: "B12", discipline: "Singles" },
+    { code: "D1009", label: "Boys' 10 Singles", ageGroup: "B10", discipline: "Singles" },
+    { code: "D1101", label: "Boys' 18 Doubles", ageGroup: "B18", discipline: "Doubles" },
+    { code: "D1103", label: "Boys' 16 Doubles", ageGroup: "B16", discipline: "Doubles" },
+    { code: "D1105", label: "Boys' 14 Doubles", ageGroup: "B14", discipline: "Doubles" },
+    { code: "D1107", label: "Boys' 12 Doubles", ageGroup: "B12", discipline: "Doubles" },
+    { code: "D1109", label: "Boys' 10 Doubles", ageGroup: "B10", discipline: "Doubles" },
   ],
   G: [
-    { code: "D1015", label: "Girls' 18 Singles", ageGroup: "G18" },
-    { code: "D1017", label: "Girls' 16 Singles", ageGroup: "G16" },
-    { code: "D1019", label: "Girls' 14 Singles", ageGroup: "G14" },
-    { code: "D1021", label: "Girls' 12 Singles", ageGroup: "G12" },
-    { code: "D1023", label: "Girls' 10 Singles", ageGroup: "G10" },
+    { code: "D1015", label: "Girls' 18 Singles", ageGroup: "G18", discipline: "Singles" },
+    { code: "D1017", label: "Girls' 16 Singles", ageGroup: "G16", discipline: "Singles" },
+    { code: "D1019", label: "Girls' 14 Singles", ageGroup: "G14", discipline: "Singles" },
+    { code: "D1021", label: "Girls' 12 Singles", ageGroup: "G12", discipline: "Singles" },
+    { code: "D1023", label: "Girls' 10 Singles", ageGroup: "G10", discipline: "Singles" },
+    { code: "D1115", label: "Girls' 18 Doubles", ageGroup: "G18", discipline: "Doubles" },
+    { code: "D1117", label: "Girls' 16 Doubles", ageGroup: "G16", discipline: "Doubles" },
+    { code: "D1119", label: "Girls' 14 Doubles", ageGroup: "G14", discipline: "Doubles" },
+    { code: "D1121", label: "Girls' 12 Doubles", ageGroup: "G12", discipline: "Doubles" },
+    { code: "D1123", label: "Girls' 10 Doubles", ageGroup: "G10", discipline: "Doubles" },
   ],
 };
 

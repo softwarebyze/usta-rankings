@@ -7,6 +7,7 @@ import { db, upsertPlayer } from "./db.js";
 import { searchPlayerAllYears } from "./search.js";
 import { enqueueScrape, resumeInterrupted } from "./scraper.js";
 import { renderOgCard, renderHomeOgCard } from "./og.js";
+import { UstaSession, getListRankContext } from "./usta.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -68,8 +69,8 @@ app.get("/api/players/:id", (req, res) => {
 app.get("/api/players/:id/rankings", (req, res) => {
   const rows = db
     .prepare(
-      `SELECT r.rank, r.points, r.district,
-              l.list_id, l.title, l.age_group, l.list_type, l.variant, l.section, l.published_date, l.year, l.month
+      `SELECT r.rank, r.points, r.district, r.row_p,
+              l.list_id, l.title, l.age_group, l.discipline, l.list_type, l.variant, l.section, l.published_date, l.year, l.month
        FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id
        WHERE r.player_id = ?
        ORDER BY l.published_date`
@@ -87,9 +88,10 @@ app.get("/api/players/:id/rankings", (req, res) => {
 function bestsForPlayer(playerId) {
   const rows = db
     .prepare(
-      `SELECT r.rank, l.age_group, l.year, l.published_date
+      `SELECT r.rank, l.age_group, l.year, l.published_date, l.discipline
        FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id
-       WHERE r.player_id = ?`
+       WHERE r.player_id = ? AND COALESCE(l.discipline,'Singles') IN ('Singles','Combined')
+         AND l.list_type LIKE '%Ranking%'`
     )
     .all(playerId);
   const best = new Map();
@@ -101,6 +103,38 @@ function bestsForPlayer(playerId) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ageGroup, r]) => ({ ageGroup, rank: r.rank, year: r.year }));
 }
+
+const contextCache = new Map();
+app.get("/api/lists/:listId/context", async (req, res) => {
+  const listId = parseInt(req.params.listId, 10);
+  const rank = parseInt(req.query.rank, 10);
+  if (!listId || !rank) return res.status(400).json({ error: "listId and rank required" });
+
+  const cacheKey = `${listId}:${rank}`;
+  const hit = contextCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 3600_000) return res.json(hit.data);
+
+  try {
+    const s = new UstaSession();
+    await s.init();
+    const ctx = await getListRankContext(s, listId, rank);
+    const data = {
+      listTitle: ctx.listTitle,
+      targetRank: rank,
+      rows: ctx.rows.map((r) => ({
+        rank: r.rank,
+        name: r.name,
+        city: r.city,
+        state: r.state,
+        points: r.points,
+      })),
+    };
+    contextCache.set(cacheKey, { at: Date.now(), data });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: "USTA list fetch failed: " + (err?.message || err) });
+  }
+});
 
 app.get("/api/players/:id/og.png", (req, res) => {
   const player = db.prepare(`SELECT * FROM players WHERE id = ?`).get(req.params.id);
