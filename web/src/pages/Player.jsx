@@ -21,6 +21,7 @@ export default function Player() {
   const [agesOn, setAgesOn] = useState(null); // null = all
   const [variantsOn, setVariantsOn] = useState(new Set(VARIANTS));
   const [typesOn, setTypesOn] = useState(null); // null = auto (Ranking if available)
+  const [rescraping, setRescraping] = useState(false);
 
   const refresh = useCallback(async () => {
     const d = await api(`/api/players/${id}`);
@@ -122,6 +123,27 @@ export default function Player() {
     setVariantsOn(next);
   }
 
+  async function refreshHistory() {
+    if (!player || rescraping || jobActive) return;
+    setRescraping(true);
+    try {
+      await api("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: player.token,
+          name: player.name,
+          city: player.city,
+          state: player.state,
+          years: player.years ? JSON.parse(player.years) : undefined,
+        }),
+      });
+      await refresh();
+    } finally {
+      setRescraping(false);
+    }
+  }
+
   return (
     <>
       <div className="player-head">
@@ -139,6 +161,11 @@ export default function Player() {
             )}
           </div>
         </div>
+        {!jobActive && (
+          <button type="button" className="btn" onClick={refreshHistory} disabled={rescraping}>
+            {rescraping ? "Starting…" : "Refresh history"}
+          </button>
+        )}
       </div>
 
       {jobActive && (

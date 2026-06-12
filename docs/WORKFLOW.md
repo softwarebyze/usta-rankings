@@ -119,9 +119,11 @@ Workflow: `.github/workflows/deploy.yml` — push to `main` runs `flyctl deploy`
 **Typical deploy:** new UI or API code goes live; all scraped ranking data remains.
 Players already built load instantly from SQLite. No automatic re-scrape runs.
 
-**Exception — scraper logic changes:** if a bug caused lists to be skipped (marked
-`found = 0` without a real USTA check), the next manual re-scrape retries those lists
-only. Confirmed rows (`found = 1`) are still not re-fetched.
+**Important:** deploying scraper fixes does **not** rewrite existing `rankings` rows.
+The database on the Fly volume keeps whatever was stored by the previous scrape. After
+a scraper bug fix ships, affected players need a one-time **Refresh history** (player
+page button, or `POST /api/scrape` again). That job retries only `found = 0` lists;
+confirmed rows (`found = 1`) are still not re-fetched from USTA.
 
 ### PR previews
 
