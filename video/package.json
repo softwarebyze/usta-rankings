@@ -1,0 +1,17 @@
+{
+  "name": "baseline-demo-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.jsx",
+    "render": "remotion render src/index.jsx BaselineDemo out/baseline-demo.mp4",
+    "render:gif": "remotion render src/index.jsx BaselineDemo out/baseline-demo.gif --codec=gif"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.476",
+    "@remotion/player": "^4.0.476",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.476"
+  }
+}
