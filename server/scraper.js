@@ -109,6 +109,7 @@ async function runJob(job) {
           divisionCode: div.code,
           divisionLabel: l.divisionLabel || div.label,
           ageGroup: div.ageGroup,
+          discipline: div.discipline,
           year,
           month: l.month,
           title: l.title,
@@ -132,7 +133,8 @@ async function runJob(job) {
   // Phase 3: check each list for the player's row.
   // Pruning rules keep this tractable (a season can have 600+ published lists):
   //  - once the player's gender is known, skip the other gender's divisions
-  //  - National lists are only checked for (year, bracket) where a sectional hit exists
+  //  - players never age DOWN: skip brackets below the max bracket seen in earlier years
+  //  - National lists are only checked for (year, bracket, discipline) where a sectional hit exists
   // Lists previously checked with found=0 are retried (covers skipped brackets and transient misses).
   const alreadyChecked = new Set(
     db
@@ -145,7 +147,7 @@ async function runJob(job) {
     candidateIds.length
       ? db
           .prepare(
-            `SELECT list_id, age_group, year, section_code FROM ranking_lists WHERE list_id IN (${candidateIds.map(() => "?").join(",")})`
+            `SELECT list_id, age_group, year, section_code, discipline FROM ranking_lists WHERE list_id IN (${candidateIds.map(() => "?").join(",")})`
           )
           .all(...candidateIds)
       : []
@@ -157,6 +159,7 @@ async function runJob(job) {
       bracket: parseInt(String(r.age_group).slice(1), 10) || 0,
       year: r.year,
       national: r.section_code === "00",
+      discipline: r.discipline || "Singles",
     }));
 
   // sectional first (year asc, bracket asc), national afterwards
@@ -171,14 +174,16 @@ async function runJob(job) {
   db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(queue.length, found, job.id);
   setPhase(job.id, "Scanning ranking lists");
 
-  // Sectional hits per (year, bracket), seeded from previous runs.
+  const maxBracketByYear = new Map();
   const hitYearBrackets = new Set();
   for (const r of db
     .prepare(
-      `SELECT l.year, l.age_group FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id WHERE r.player_id=?`
+      `SELECT l.year, l.age_group, l.discipline FROM rankings r JOIN ranking_lists l ON l.list_id = r.list_id WHERE r.player_id=?`
     )
     .all(player.id)) {
-    hitYearBrackets.add(`${r.year}:${r.age_group}`);
+    const b = parseInt(String(r.age_group).slice(1), 10) || 0;
+    maxBracketByYear.set(r.year, Math.max(maxBracketByYear.get(r.year) ?? 0, b));
+    hitYearBrackets.add(`${r.year}:${r.age_group}:${r.discipline || "Singles"}`);
   }
 
   const markChecked = db.prepare(`INSERT OR REPLACE INTO checked_lists (player_id, list_id, found) VALUES (?,?,?)`);
@@ -193,7 +198,8 @@ async function runJob(job) {
 
   function shouldSkip(m) {
     if (lockedGender && m.gender !== lockedGender) return true;
-    if (m.national && !hitYearBrackets.has(`${m.year}:${m.ageGroup}`)) return true;
+    for (const [y, b] of maxBracketByYear) if (y < m.year && m.bracket < b) return true;
+    if (m.national && !hitYearBrackets.has(`${m.year}:${m.ageGroup}:${m.discipline}`)) return true;
     return false;
   }
 
@@ -215,7 +221,8 @@ async function runJob(job) {
       if (row) {
         insertRanking.run(player.id, m.listId, row.rank, row.points, row.rowP, row.district);
         found++;
-        hitYearBrackets.add(`${m.year}:${m.ageGroup}`);
+        maxBracketByYear.set(m.year, Math.max(maxBracketByYear.get(m.year) ?? 0, m.bracket));
+        hitYearBrackets.add(`${m.year}:${m.ageGroup}:${m.discipline}`);
         if (!lockedGender && m.gender) {
           lockedGender = m.gender;
           db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);

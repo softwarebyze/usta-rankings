@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
 CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id);
 `);
 
+try {
+  db.exec(`ALTER TABLE ranking_lists ADD COLUMN discipline TEXT DEFAULT 'Singles'`);
+} catch {}
+
+// "(Combined)" lists rank combined singles+doubles points — a discipline, not a scope.
+db.prepare(`UPDATE ranking_lists SET discipline='Combined' WHERE title LIKE '%(Combined)%'`).run();
+db.prepare(
+  `UPDATE ranking_lists SET variant='Sectional' WHERE section_code != '00' AND variant NOT IN ('Sectional','National')`
+).run();
+db.prepare(`UPDATE ranking_lists SET variant='National' WHERE section_code='00'`).run();
+
 export function upsertPlayer({ token, name, city, state }) {
   db.prepare(
     `INSERT INTO players (token, name, city, state) VALUES (?, ?, ?, ?)
@@ -90,15 +101,8 @@ export function upsertPlayer({ token, name, city, state }) {
   return db.prepare(`SELECT * FROM players WHERE token = ?`).get(token);
 }
 
-export function parseListMeta(title) {
-  // e.g. "2016 Florida Tentative Ranking (Jul) (Combined)"
-  const variant = /\(Combined\)/i.test(title)
-    ? "Combined"
-    : /\(Sectional\)/i.test(title)
-      ? "Sectional"
-      : /National/i.test(title)
-        ? "National"
-        : "Other";
+export function parseListMeta(title, sectionCode) {
+  const variant = sectionCode === "00" ? "National" : "Sectional";
   const typeMatch = title.match(
     /(Standing List|Tentative Ranking|Final Ranking|Endorsement List|Seeding List|Selection List|Qualifier List|Aging Up List|Bonus Points List|Points Race[^(]*|Year to Date[^(]*|12 Month Rolling[^(]*|Calendar Year[^(]*)/i
   );
@@ -106,10 +110,11 @@ export function parseListMeta(title) {
 }
 
 export function upsertRankingList(l) {
-  const { variant, listType } = parseListMeta(l.title);
+  const { variant, listType } = parseListMeta(l.title, l.sectionCode);
+  const discipline = /\(Combined\)/i.test(l.title) ? "Combined" : l.discipline || "Singles";
   db.prepare(
-    `INSERT INTO ranking_lists (list_id, section_code, section, division_code, division_label, age_group, year, month, title, list_type, variant, published_date)
-     VALUES (@listId, @sectionCode, @section, @divisionCode, @divisionLabel, @ageGroup, @year, @month, @title, @listType, @variant, @publishedDate)
-     ON CONFLICT(list_id) DO UPDATE SET title=excluded.title, published_date=excluded.published_date`
-  ).run({ ...l, listType, variant });
+    `INSERT INTO ranking_lists (list_id, section_code, section, division_code, division_label, age_group, year, month, title, list_type, variant, published_date, discipline)
+     VALUES (@listId, @sectionCode, @section, @divisionCode, @divisionLabel, @ageGroup, @year, @month, @title, @listType, @variant, @publishedDate, @discipline)
+     ON CONFLICT(list_id) DO UPDATE SET title=excluded.title, published_date=excluded.published_date, variant=excluded.variant, discipline=excluded.discipline`
+  ).run({ ...l, listType, variant, discipline });
 }

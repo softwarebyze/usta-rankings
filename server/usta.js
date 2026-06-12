@@ -253,3 +253,33 @@ export async function findPlayerInList(session, listId, lastName, token) {
   }
   return { row: null, listTitle };
 }
+
+/** Fetch rows around a target rank on a list (default rank order). Used for hover context. */
+export async function getListRankContext(session, listId, targetRank, { radius = 3 } = {}) {
+  let resp = await session.post("ctl00_mainContent_UpdatePanel_RankingHome", {
+    eventTarget: "ctl00_mainContent_UpdatePanel_RankingHome",
+    eventArgument: `Sender=RankingList&type=searchresults&id=${listId}`,
+  });
+  const listTitle = resp.match(/<h1[^>]*>\s*([^<]+?)\s*<\/h1>/)?.[1]?.trim() ?? null;
+
+  let rows = parsePlayerRows(resp);
+  for (let page = 2; page <= 30 && rows.length > 0; page++) {
+    const min = Math.min(...rows.map((r) => r.rank));
+    const max = Math.max(...rows.map((r) => r.rank));
+    if (targetRank >= min - radius && targetRank <= max + radius) break;
+    const pagerRe = new RegExp(
+      `__doPostBack\\('(ctl00\\$mainContent\\$grdMain2)','(Page\\$${page})'\\)`
+    );
+    const pm = resp.match(pagerRe);
+    if (!pm) break;
+    resp = await session.post(pm[1], { eventTarget: pm[1], eventArgument: pm[2] });
+    rows = parsePlayerRows(resp);
+  }
+
+  rows.sort((a, b) => a.rank - b.rank);
+  const idx = rows.findIndex((r) => r.rank === targetRank);
+  const center = idx >= 0 ? idx : rows.findIndex((r) => r.rank >= targetRank);
+  const start = Math.max(0, (center >= 0 ? center : 0) - radius);
+  const slice = rows.slice(start, start + radius * 2 + 1);
+  return { listTitle, rows: slice, targetRank };
+}

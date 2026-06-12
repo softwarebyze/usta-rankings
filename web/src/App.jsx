@@ -16,9 +16,12 @@ export default function App() {
       </header>
       <Outlet />
       <footer className="colophon">
-        Ranking data scraped live from the USTA TennisLink ranking archive (2001–present). Rankings shown are
-        sectional &amp; national junior singles standings as published. Lower rank = better; charts are inverted so
-        climbing the rankings points up.
+        Ranking data scraped live from{" "}
+        <a href="https://tennislink.usta.com/tournaments/rankings/rankinghome.aspx" target="_blank" rel="noreferrer">
+          USTA TennisLink
+        </a>{" "}
+        (2001–present). Singles, doubles &amp; combined lists as published. Lower rank = better; charts are inverted
+        so climbing the rankings points up.
       </footer>
     </div>
   );

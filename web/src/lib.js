@@ -22,6 +22,14 @@ export function niceName(name) {
     : name;
 }
 
+export function sourceUrl(listId, rowP) {
+  const base = "https://tennislink.usta.com/tournaments/rankings/rankinghome.aspx";
+  if (rowP != null) {
+    return `${base}?Page=PlayerRecord&id=${listId}&p=${rowP}&Type=searchresults#&&s=4\\Page_RankingList\\ListID_${listId}\\PlayerID_${rowP}\\Year_\\Type_searchresults`;
+  }
+  return `${base}#&&s=2\\Page_RankingList\\ListID_${listId}`;
+}
+
 export async function api(path, opts) {
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
