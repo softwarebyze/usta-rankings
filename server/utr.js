@@ -45,7 +45,15 @@ export async function searchUtrPlayers(query, { top = 20 } = {}) {
   if (q.length < 2) return [];
   const url = `${SEARCH_URL}?query=${encodeURIComponent(q)}&top=${top}`;
   const data = await utrFetch(url);
-  return (data.hits || []).map(mapHit);
+  const players = (data.hits || []).map(mapHit);
+  const qn = q.toLowerCase();
+  players.sort((a, b) => {
+    const ae = a.name.toLowerCase() === qn ? 0 : a.name.toLowerCase().includes(qn) ? 1 : 2;
+    const be = b.name.toLowerCase() === qn ? 0 : b.name.toLowerCase().includes(qn) ? 1 : 2;
+    if (ae !== be) return ae - be;
+    return a.name.localeCompare(b.name);
+  });
+  return players;
 }
 
 function cacheGet(playerId, yearKey) {
