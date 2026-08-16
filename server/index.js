@@ -7,8 +7,8 @@ import { db, upsertPlayer } from "./db.js";
 import { searchPlayerAllYears } from "./search.js";
 import { enqueueScrape, resumeInterrupted } from "./scraper.js";
 import { renderOgCard, renderHomeOgCard } from "./og.js";
-import { searchUtrPlayers, computeH2H } from "./utr.js";
 import { rankingMeetings, findLocalPlayer } from "./rankingH2h.js";
+import { computeTennisLinkH2H, getPlayerMatchHistory } from "./playerRecords.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -130,55 +130,40 @@ app.get("/api/og.png", (_req, res) => {
   }
 });
 
-/** Search Universal Tennis players for H2H picker. */
-app.get("/api/utr/search", async (req, res) => {
-  const q = String(req.query.q ?? "").trim();
-  if (q.length < 2) return res.status(400).json({ error: "Enter at least 2 characters" });
-  try {
-    const players = await searchUtrPlayers(q);
-    res.json({ players });
-  } catch (err) {
-    res.status(502).json({ error: "UTR search failed: " + (err?.message || err) });
-  }
-});
-
 /**
- * Head-to-head match history (UTR) plus optional USTA ranking-list meetings
- * when both players have been scraped locally.
- * Query: player1, player2 (UTR ids). Optional name1/name2/city1/... for display + local match.
+ * Head-to-head match history from USTA TennisLink player records.
+ * Query: token1, token2 (encrypted TennisLink PlayerIDs from /api/search).
+ * Optional name1/name2/city1/state1/... for display + local ranking overlap.
  */
 app.get("/api/h2h", async (req, res) => {
-  const player1 = String(req.query.player1 ?? "").trim();
-  const player2 = String(req.query.player2 ?? "").trim();
-  if (!player1 || !player2) {
-    return res.status(400).json({ error: "player1 and player2 (UTR ids) are required" });
+  const token1 = String(req.query.token1 ?? req.query.player1 ?? "").trim();
+  const token2 = String(req.query.token2 ?? req.query.player2 ?? "").trim();
+  if (!token1 || !token2) {
+    return res.status(400).json({ error: "token1 and token2 are required" });
   }
-  if (player1 === player2) {
+  if (token1 === token2) {
     return res.status(400).json({ error: "Pick two different players" });
   }
 
-  const profile1 = {
-    id: player1,
+  const player1 = {
+    token: token1,
     name: req.query.name1 || null,
     city: req.query.city1 || null,
     state: req.query.state1 || null,
-    location: req.query.location1 || null,
-    singlesUtr: req.query.utr1 || null,
   };
-  const profile2 = {
-    id: player2,
+  const player2 = {
+    token: token2,
     name: req.query.name2 || null,
     city: req.query.city2 || null,
     state: req.query.state2 || null,
-    location: req.query.location2 || null,
-    singlesUtr: req.query.utr2 || null,
   };
+  const force = String(req.query.force || "") === "1";
 
   try {
-    const matches = await computeH2H(player1, player2, { profile1, profile2 });
+    const matches = await computeTennisLinkH2H(player1, player2, { force });
 
-    const local1 = findLocalPlayer(profile1);
-    const local2 = findLocalPlayer(profile2);
+    const local1 = findLocalPlayer(player1);
+    const local2 = findLocalPlayer(player2);
     let rankings = null;
     if (local1 && local2) {
       rankings = rankingMeetings(local1.id, local2.id);
@@ -195,6 +180,18 @@ app.get("/api/h2h", async (req, res) => {
   } catch (err) {
     console.error("h2h failed:", err);
     res.status(502).json({ error: "Head-to-head lookup failed: " + (err?.message || err) });
+  }
+});
+
+/** Fetch/cache a single player's TennisLink match record. */
+app.get("/api/records/:token", async (req, res) => {
+  try {
+    const force = String(req.query.force || "") === "1";
+    const data = await getPlayerMatchHistory(req.params.token, { force });
+    res.json(data);
+  } catch (err) {
+    console.error("record fetch failed:", err);
+    res.status(502).json({ error: "Player record fetch failed: " + (err?.message || err) });
   }
 });
 

@@ -14,7 +14,11 @@ function PlayerPicker({ label, value, onChange }) {
     setSearching(true);
     setError(null);
     try {
-      const d = await api(`/api/utr/search?q=${encodeURIComponent(query.trim())}`);
+      const d = await api("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: query.trim() }),
+      });
       setHits(d.players || []);
     } catch (err) {
       setError(err.message);
@@ -30,9 +34,10 @@ function PlayerPicker({ label, value, onChange }) {
       {value ? (
         <div className="h2h-selected">
           <div>
-            <div className="result-name">{value.name}</div>
+            <div className="result-name">{niceName(value.name)}</div>
             <div className="result-meta">
-              {[value.location, value.singlesUtr ? `UTR ${value.singlesUtr}` : null].filter(Boolean).join(" · ")}
+              {[value.city, value.state].filter(Boolean).join(", ")}
+              {value.years?.length ? ` · ranked ${value.years[0]}–${value.years[value.years.length - 1]}` : ""}
             </div>
           </div>
           <button type="button" className="btn small" onClick={() => onChange(null)}>
@@ -45,18 +50,23 @@ function PlayerPicker({ label, value, onChange }) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="First Last — e.g. Michael Plutt"
+              placeholder="Last name, or “First Last” — e.g. Plutt"
             />
             <button disabled={searching}>{searching ? "…" : "Find"}</button>
           </form>
-          {error && <div className="error-box" style={{ marginTop: 12 }}>{error}</div>}
+          {error && (
+            <div className="error-box" style={{ marginTop: 12 }}>
+              {error}
+            </div>
+          )}
           {hits.length > 0 && (
             <div className="h2h-hits">
               {hits.map((p) => (
-                <button type="button" className="h2h-hit" key={p.id} onClick={() => onChange(p)}>
-                  <span className="result-name">{p.name}</span>
+                <button type="button" className="h2h-hit" key={p.token} onClick={() => onChange(p)}>
+                  <span className="result-name">{niceName(p.name)}</span>
                   <span className="result-meta">
-                    {[p.location, p.singlesUtr ? `UTR ${p.singlesUtr}` : null].filter(Boolean).join(" · ")}
+                    {[p.city, p.state].filter(Boolean).join(", ")}
+                    {p.years?.length ? ` · ${p.years.join(", ")}` : ""}
                   </span>
                 </button>
               ))}
@@ -114,71 +124,66 @@ export default function H2H() {
   const [params, setParams] = useSearchParams();
   const [player1, setPlayer1] = useState(null);
   const [player2, setPlayer2] = useState(null);
-  const [discipline, setDiscipline] = useState("all"); // all | singles | doubles
+  const [discipline, setDiscipline] = useState("all");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Hydrate from URL once
   useEffect(() => {
-    const p1 = params.get("player1");
-    const p2 = params.get("player2");
-    if (p1 && !player1) {
+    const t1 = params.get("token1");
+    const t2 = params.get("token2");
+    if (t1 && !player1) {
       setPlayer1({
-        id: p1,
-        name: params.get("name1") || `Player ${p1}`,
-        location: params.get("location1") || null,
+        token: t1,
+        name: params.get("name1") || t1,
         city: params.get("city1") || null,
         state: params.get("state1") || null,
-        singlesUtr: params.get("utr1") || null,
       });
     }
-    if (p2 && !player2) {
+    if (t2 && !player2) {
       setPlayer2({
-        id: p2,
-        name: params.get("name2") || `Player ${p2}`,
-        location: params.get("location2") || null,
+        token: t2,
+        name: params.get("name2") || t2,
         city: params.get("city2") || null,
         state: params.get("state2") || null,
-        singlesUtr: params.get("utr2") || null,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const load = useCallback(async (a, b) => {
-    if (!a?.id || !b?.id) return;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    const qs = new URLSearchParams({
-      player1: a.id,
-      player2: b.id,
-    });
-    if (a.name) qs.set("name1", a.name);
-    if (b.name) qs.set("name2", b.name);
-    if (a.city) qs.set("city1", a.city);
-    if (b.city) qs.set("city2", b.city);
-    if (a.state) qs.set("state1", a.state);
-    if (b.state) qs.set("state2", b.state);
-    if (a.location) qs.set("location1", a.location);
-    if (b.location) qs.set("location2", b.location);
-    if (a.singlesUtr) qs.set("utr1", a.singlesUtr);
-    if (b.singlesUtr) qs.set("utr2", b.singlesUtr);
-    try {
-      const d = await api(`/api/h2h?${qs}`);
-      setData(d);
-      setParams(qs, { replace: true });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [setParams]);
+  const load = useCallback(
+    async (a, b, { force = false } = {}) => {
+      if (!a?.token || !b?.token) return;
+      setLoading(true);
+      setError(null);
+      setData(null);
+      const qs = new URLSearchParams({
+        token1: a.token,
+        token2: b.token,
+      });
+      if (a.name) qs.set("name1", a.name);
+      if (b.name) qs.set("name2", b.name);
+      if (a.city) qs.set("city1", a.city);
+      if (b.city) qs.set("city2", b.city);
+      if (a.state) qs.set("state1", a.state);
+      if (b.state) qs.set("state2", b.state);
+      if (force) qs.set("force", "1");
+      try {
+        const d = await api(`/api/h2h?${qs}`);
+        setData(d);
+        setParams(qs, { replace: true });
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setParams]
+  );
 
   useEffect(() => {
-    if (player1?.id && player2?.id) load(player1, player2);
-  }, [player1?.id, player2?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (player1?.token && player2?.token) load(player1, player2);
+  }, [player1?.token, player2?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredMatches = useMemo(() => {
     const list = data?.matches || [];
@@ -199,8 +204,8 @@ export default function H2H() {
           Match <em>history.</em>
         </h1>
         <p className="lede">
-          Pick any two players to see every recorded meeting — scores, events, and the overall head-to-head. Ranking
-          trajectory overlays still live on{" "}
+          Head-to-head results from the USTA TennisLink player archive — every recorded meeting with score, round, and
+          event. Ranking trajectory overlays stay on{" "}
           <Link to="/compare" style={{ color: "var(--ball)" }}>
             Compare
           </Link>
@@ -218,11 +223,20 @@ export default function H2H() {
           <PlayerPicker label="Player 2" value={player2} onChange={setPlayer2} />
         </div>
         {player1 && player2 && (
-          <div style={{ marginTop: 18 }}>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button className="btn solid" disabled={loading} onClick={() => load(player1, player2)}>
-              {loading ? "Loading meetings…" : "Refresh head to head"}
+              {loading ? "Loading TennisLink records…" : "Refresh head to head"}
+            </button>
+            <button className="btn" disabled={loading} onClick={() => load(player1, player2, { force: true })}>
+              Force re-fetch
             </button>
           </div>
+        )}
+        {loading && (
+          <p className="search-hint" style={{ marginTop: 14 }}>
+            <b>Pulling full match records from TennisLink…</b> first load can take up to a minute per player; later
+            lookups are cached.
+          </p>
         )}
       </section>
 
@@ -231,7 +245,7 @@ export default function H2H() {
       {loading && !data && (
         <section className="panel">
           <div className="empty">
-            <span className="spinner" /> Sweeping match results for both players…
+            <span className="spinner" /> Fetching archived player records…
           </div>
         </section>
       )}
@@ -243,6 +257,11 @@ export default function H2H() {
               {name1} <span style={{ color: "var(--chalk-dim)", fontWeight: 400 }}>vs</span> {name2}
             </h2>
             <p className="h2h-lead">{leadCopy(activeRecord, name1, name2)}</p>
+            <div className="result-meta" style={{ marginBottom: 14 }}>
+              {[data.player1?.overallRecord && `${name1} overall ${data.player1.overallRecord}`, data.player2?.overallRecord && `${name2} overall ${data.player2.overallRecord}`]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
             <div className="chart-controls" style={{ marginBottom: 18 }}>
               {[
                 ["all", "All"],
@@ -264,14 +283,14 @@ export default function H2H() {
               <RecordCard title="Singles" record={data.singlesRecord} name1={name1} name2={name2} />
               <RecordCard title="Doubles" record={data.doublesRecord} name1={name1} name2={name2} />
             </div>
-            <p className="chart-note">Match results via {data.source}. Scores shown winner–loser by set.</p>
+            <p className="chart-note">Match results via {data.source}{data.cached ? " (cached)" : ""}.</p>
           </section>
 
           <section className="panel">
             <h2>Meetings ({filteredMatches.length})</h2>
             {filteredMatches.length === 0 ? (
               <div className="empty">
-                No recorded meetings between these two in the available results
+                No recorded meetings between these two in the TennisLink archive
                 {discipline !== "all" ? ` for ${discipline}` : ""}.
               </div>
             ) : (
@@ -282,24 +301,23 @@ export default function H2H() {
                       <th>Date</th>
                       <th>Winner</th>
                       <th>Score</th>
-                      <th>Draw</th>
+                      <th>Round</th>
                       <th>Event</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredMatches.map((m, i) => (
-                      <tr key={`${m.date}-${m.eventId}-${m.drawName}-${i}`}>
+                      <tr key={`${m.date}-${m.round}-${m.score}-${i}`}>
                         <td className="num">{fmtDate(m.date)}</td>
                         <td>
-                          <span className={`tag ${m.player1Won ? "win" : "loss"}`}>
-                            {m.winnerName}
-                          </span>
+                          <span className={`tag ${m.player1Won ? "win" : "loss"}`}>{m.winnerName}</span>
                           <span className="result-meta" style={{ marginLeft: 8 }}>
                             {m.singles ? "Singles" : "Doubles"}
+                            {m.partner ? ` · w/ ${m.partner}` : ""}
                           </span>
                         </td>
                         <td className="num">{m.score || "—"}</td>
-                        <td>{m.drawName || "—"}</td>
+                        <td>{m.round || "—"}</td>
                         <td>{m.eventName || "—"}</td>
                       </tr>
                     ))}
@@ -313,10 +331,8 @@ export default function H2H() {
             <section className="panel">
               <h2>Same ranking lists ({data.rankingMeetings.summary.meetings})</h2>
               <p className="h2h-lead">
-                On published USTA lists where both appear:{" "}
-                {niceName(data.rankingMeetings.player1.name)} ranked ahead{" "}
-                {data.rankingMeetings.summary.player1Ahead}× ·{" "}
-                {niceName(data.rankingMeetings.player2.name)} ahead{" "}
+                On published USTA lists where both appear: {niceName(data.rankingMeetings.player1.name)} ranked ahead{" "}
+                {data.rankingMeetings.summary.player1Ahead}× · {niceName(data.rankingMeetings.player2.name)} ahead{" "}
                 {data.rankingMeetings.summary.player2Ahead}×
               </p>
               <div className="table-scroll">
@@ -345,28 +361,6 @@ export default function H2H() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-              {data.localPlayers?.player1 && data.localPlayers?.player2 && (
-                <p className="chart-note">
-                  Also chart trajectories on{" "}
-                  <Link to="/compare" style={{ color: "var(--ball)" }}>
-                    Compare
-                  </Link>{" "}
-                  after both histories are on file.
-                </p>
-              )}
-            </section>
-          )}
-
-          {!data.rankingMeetings?.summary?.meetings && (
-            <section className="panel">
-              <h2>USTA ranking overlap</h2>
-              <div className="empty" style={{ textAlign: "left", padding: "8px 0" }}>
-                Build both players&apos; ranking histories from{" "}
-                <Link to="/" style={{ color: "var(--ball)" }}>
-                  Search
-                </Link>{" "}
-                to also see every published list where they appeared together.
               </div>
             </section>
           )}

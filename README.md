@@ -54,5 +54,5 @@ Zachary Ebenfeld (ListIDs 1626410/1682666/1756446 → ranks 75/63/88).
 - `POST /api/scrape` `{token, name, city, state, years}` → `{jobId, playerId}`
 - `GET /api/jobs/:id` → status/phase/progress
 - `GET /api/players` · `GET /api/players/:id` · `GET /api/players/:id/rankings`
-- `GET /api/utr/search?q=` → Universal Tennis player hits for match H2H
-- `GET /api/h2h?player1=&player2=` → head-to-head match history (UTR) plus ranking-list meetings when both players are on file locally
+- `GET /api/h2h?token1=&token2=` → head-to-head match history from TennisLink player records (plus ranking-list meetings when both players are on file locally)
+- `GET /api/records/:token` → full TennisLink match record for one player (cached)

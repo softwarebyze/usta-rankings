@@ -17,8 +17,8 @@ export default function App() {
       </header>
       <Outlet />
       <footer className="colophon">
-        Ranking data scraped live from the USTA TennisLink ranking archive (2001–present). Match head-to-head uses
-        recorded results from UTR Sports. Rankings shown are sectional &amp; national junior singles standings as
+        Ranking history scraped from the USTA TennisLink ranking archive (2001–present). Match head-to-head uses
+        TennisLink archived player records. Rankings shown are sectional &amp; national junior singles standings as
         published. Lower rank = better; charts are inverted so climbing the rankings points up.
       </footer>
     </div>
