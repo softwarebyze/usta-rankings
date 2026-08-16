@@ -135,11 +135,23 @@ app.get("/api/og.png", (_req, res) => {
  * Query: token1, token2 (encrypted TennisLink PlayerIDs from /api/search).
  * Optional name1/name2/city1/state1/... for display + local ranking overlap.
  */
+const TOKEN_RE = /^[A-Za-z0-9+/=_-]{8,256}$/;
+
+function requireToken(value, label) {
+  const t = String(value ?? "").trim();
+  if (!t) throw Object.assign(new Error(`${label} is required`), { status: 400 });
+  if (!TOKEN_RE.test(t)) throw Object.assign(new Error(`invalid ${label}`), { status: 400 });
+  return t;
+}
+
 app.get("/api/h2h", async (req, res) => {
-  const token1 = String(req.query.token1 ?? req.query.player1 ?? "").trim();
-  const token2 = String(req.query.token2 ?? req.query.player2 ?? "").trim();
-  if (!token1 || !token2) {
-    return res.status(400).json({ error: "token1 and token2 are required" });
+  let token1;
+  let token2;
+  try {
+    token1 = requireToken(req.query.token1 ?? req.query.t1 ?? req.query.player1, "token1");
+    token2 = requireToken(req.query.token2 ?? req.query.t2 ?? req.query.player2, "token2");
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
   }
   if (token1 === token2) {
     return res.status(400).json({ error: "Pick two different players" });
@@ -183,13 +195,25 @@ app.get("/api/h2h", async (req, res) => {
   }
 });
 
-/** Fetch/cache a single player's TennisLink match record. */
-app.get("/api/records/:token", async (req, res) => {
+/** Fetch/cache a single player's TennisLink match record (used for prefetch). */
+app.get("/api/records", async (req, res) => {
   try {
+    const token = requireToken(req.query.token, "token");
     const force = String(req.query.force || "") === "1";
-    const data = await getPlayerMatchHistory(req.params.token, { force });
-    res.json(data);
+    const data = await getPlayerMatchHistory(token, { force });
+    res.json({
+      token: data.token,
+      playerName: data.playerName,
+      residence: data.residence,
+      overallWins: data.overallWins,
+      overallLosses: data.overallLosses,
+      matchCount: data.matches.length,
+      cached: data.cached,
+      fetchedAt: data.fetchedAt,
+    });
   } catch (err) {
+    const status = err.status || 502;
+    if (status === 400) return res.status(400).json({ error: err.message });
     console.error("record fetch failed:", err);
     res.status(502).json({ error: "Player record fetch failed: " + (err?.message || err) });
   }
@@ -264,14 +288,38 @@ app.get("/player/:id", (req, res) => {
   });
 });
 
+app.get("/h2h/:slug", (req, res) => {
+  const origin = `${req.protocol}://${req.get("host")}`;
+  const slug = String(req.params.slug || "");
+  const m = slug.match(/^(.+)-vs-(.+)$/i);
+  const unslug = (s) =>
+    s
+      .split("-")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  const titlePair = m ? `${unslug(m[1])} vs ${unslug(m[2])}` : "Head to Head";
+  sendIndex(res, {
+    title: escAttr(`${titlePair} — Match History | Baseline`),
+    description: escAttr(
+      `Head-to-head USTA TennisLink match history${m ? ` for ${titlePair}` : ""}. Scores, rounds, and events.`
+    ),
+    image: `${origin}/api/og.png`,
+    url: `${origin}/h2h/${encodeURIComponent(slug)}`,
+  });
+});
+
 const DEFAULT_DESC =
   "Search two decades of published USTA junior ranking lists and rebuild any player's complete ranking history — best rank per age bracket, charted over time.";
 
 app.get(/^\/(?!api\/).*/, (req, res) => {
   const origin = `${req.protocol}://${req.get("host")}`;
+  const isH2h = req.path === "/h2h" || req.path === "/h2h/";
   sendIndex(res, {
-    title: "Baseline — USTA Junior Ranking History",
-    description: DEFAULT_DESC,
+    title: isH2h ? "Head to Head — Match History | Baseline" : "Baseline — USTA Junior Ranking History",
+    description: isH2h
+      ? "Compare any two USTA players' TennisLink match history — head-to-head record, scores, and events."
+      : DEFAULT_DESC,
     image: `${origin}/api/og.png`,
     url: `${origin}${req.path}`,
   });

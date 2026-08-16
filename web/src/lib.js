@@ -22,6 +22,37 @@ export function niceName(name) {
     : name;
 }
 
+/** URL slug for a player name: "Plutt, Michael" → "michael-plutt" */
+export function nameSlug(name) {
+  return niceName(name)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+export function h2hSlug(name1, name2) {
+  const a = nameSlug(name1);
+  const b = nameSlug(name2);
+  if (!a || !b) return "";
+  return `${a}-vs-${b}`;
+}
+
+/** Human title from slug: "michael-plutt-vs-jourdan-kast" → "Michael Plutt vs Jourdan Kast" */
+export function titleFromH2hSlug(slug) {
+  const m = String(slug || "").match(/^(.+)-vs-(.+)$/i);
+  if (!m) return null;
+  const unslug = (s) =>
+    s
+      .split("-")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  return `${unslug(m[1])} vs ${unslug(m[2])}`;
+}
+
 export async function api(path, opts) {
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
