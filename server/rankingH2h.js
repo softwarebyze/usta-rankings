@@ -34,7 +34,7 @@ export function rankingMeetings(playerId1, playerId2) {
 
   const meetings = rows.map((r) => {
     const date = parseDate(r.published_date);
-    const leaderId = r.rank1 <= r.rank2 ? a : b;
+    const leaderId = r.rank1 === r.rank2 ? null : r.rank1 < r.rank2 ? a : b;
     return {
       listId: r.list_id,
       title: r.title,
@@ -54,7 +54,8 @@ export function rankingMeetings(playerId1, playerId2) {
   });
 
   const p1Ahead = meetings.filter((m) => m.higherRankedId === a).length;
-  const p2Ahead = meetings.length - p1Ahead;
+  const p2Ahead = meetings.filter((m) => m.higherRankedId === b).length;
+  const ties = meetings.filter((m) => m.higherRankedId == null).length;
 
   return {
     player1: { id: p1.id, name: p1.name, city: p1.city, state: p1.state },
@@ -63,6 +64,7 @@ export function rankingMeetings(playerId1, playerId2) {
       meetings: meetings.length,
       player1Ahead: p1Ahead,
       player2Ahead: p2Ahead,
+      ties,
     },
     meetings,
   };
@@ -86,10 +88,13 @@ export function findLocalPlayer({ name, city, state }) {
     return norm(`${first} ${last}`);
   };
 
-  const candidates = players.filter((p) => {
-    const pn = flipped(p.name);
-    return pn === target || pn.includes(target) || target.includes(pn);
-  });
+  const exact = players.filter((p) => flipped(p.name) === target);
+  const candidates = exact.length
+    ? exact
+    : players.filter((p) => {
+        const pn = flipped(p.name);
+        return pn.startsWith(`${target} `) || pn.endsWith(` ${target}`) || pn.includes(` ${target} `);
+      });
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
 

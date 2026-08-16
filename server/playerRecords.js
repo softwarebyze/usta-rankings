@@ -164,18 +164,44 @@ function loadCachedMatches(token) {
     .prepare(
       `SELECT date, event_name AS eventName, round, result, score,
               opponent_name AS opponentName, opponent_token AS opponentToken,
+              opponent_tokens AS opponentTokensJson,
               partner, singles, draw_id AS drawId
        FROM match_results WHERE player_token = ? ORDER BY date DESC`
     )
     .all(token)
-    .map((r) => ({
-      ...r,
-      singles: !!r.singles,
-      opponentTokens: r.opponentToken ? [r.opponentToken] : [],
-    }));
+    .map((r) => {
+      let opponentTokens = [];
+      if (r.opponentTokensJson) {
+        try {
+          opponentTokens = JSON.parse(r.opponentTokensJson);
+        } catch {
+          opponentTokens = [];
+        }
+      }
+      if (!opponentTokens.length && r.opponentToken) opponentTokens = [r.opponentToken];
+      return {
+        date: r.date,
+        eventName: r.eventName,
+        round: r.round,
+        result: r.result,
+        score: r.score,
+        opponentName: r.opponentName,
+        opponentToken: r.opponentToken,
+        opponentTokens,
+        partner: r.partner,
+        singles: !!r.singles,
+        drawId: r.drawId,
+      };
+    });
 }
 
 function saveRecord(token, parsed) {
+  if (parsed.matches.length === 0) {
+    const prior = db.prepare(`SELECT COUNT(*) AS n FROM match_results WHERE player_token = ?`).get(token);
+    if (prior?.n > 0) {
+      throw new Error("player record parsed to zero matches; keeping cached record");
+    }
+  }
   const tx = db.transaction(() => {
     db.prepare(
       `INSERT INTO player_records (token, name, residence, overall_wins, overall_losses, match_count, fetched_at)
@@ -195,10 +221,11 @@ function saveRecord(token, parsed) {
     db.prepare(`DELETE FROM match_results WHERE player_token = ?`).run(token);
     const ins = db.prepare(
       `INSERT INTO match_results
-        (player_token, date, event_name, round, result, score, opponent_name, opponent_token, partner, singles, draw_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (player_token, date, event_name, round, result, score, opponent_name, opponent_token, opponent_tokens, partner, singles, draw_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const m of parsed.matches) {
+      const tokens = m.opponentTokens?.length ? m.opponentTokens : m.opponentToken ? [m.opponentToken] : [];
       ins.run(
         token,
         m.date,
@@ -207,7 +234,8 @@ function saveRecord(token, parsed) {
         m.result,
         m.score,
         m.opponentName,
-        m.opponentToken,
+        m.opponentToken || tokens[0] || null,
+        tokens.length ? JSON.stringify(tokens) : null,
         m.partner,
         m.singles ? 1 : 0,
         m.drawId
@@ -216,6 +244,8 @@ function saveRecord(token, parsed) {
   });
   tx();
 }
+
+const inflight = new Map();
 
 /** Fetch (or return cached) full TennisLink match history for a player token. */
 export async function getPlayerMatchHistory(token, { force = false } = {}) {
@@ -236,28 +266,51 @@ export async function getPlayerMatchHistory(token, { force = false } = {}) {
     };
   }
 
-  const session = new UstaSession();
-  await session.init();
-  const delta = await session.post("ctl00_mainContent_UpdatePanel_RankingHome", {
-    eventTarget: "ctl00_mainContent_UpdatePanel_RankingHome",
-    eventArgument: `Sender=PlayerListsRow&Type=Rankings&PlayerId=${t}`,
-  });
-  const html = recordHtmlFromDelta(delta);
-  if (!html || html.length < 500) {
-    throw new Error("TennisLink returned an empty player record");
-  }
-  const parsed = parsePlayerRecordHtml(html);
-  saveRecord(t, parsed);
-  return {
-    token: t,
-    playerName: parsed.playerName,
-    residence: parsed.residence,
-    overallWins: parsed.overallWins,
-    overallLosses: parsed.overallLosses,
-    matches: parsed.matches,
-    cached: false,
-    fetchedAt: new Date().toISOString(),
-  };
+  const key = `${t}|${force ? "1" : "0"}`;
+  if (inflight.has(key)) return inflight.get(key);
+
+  const promise = (async () => {
+    const session = new UstaSession();
+    await session.init();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      // UstaSession.post doesn't take AbortSignal yet; bound overall wait with Promise.race
+      const delta = await Promise.race([
+        session.post("ctl00_mainContent_UpdatePanel_RankingHome", {
+          eventTarget: "ctl00_mainContent_UpdatePanel_RankingHome",
+          eventArgument: `Sender=PlayerListsRow&Type=Rankings&PlayerId=${t}`,
+        }),
+        new Promise((_, reject) => {
+          controller.signal.addEventListener("abort", () =>
+            reject(new Error("TennisLink record fetch timed out after 120s"))
+          );
+        }),
+      ]);
+      const html = recordHtmlFromDelta(delta);
+      if (!html || html.length < 500) {
+        throw new Error("TennisLink returned an empty player record");
+      }
+      const parsed = parsePlayerRecordHtml(html);
+      saveRecord(t, parsed);
+      return {
+        token: t,
+        playerName: parsed.playerName,
+        residence: parsed.residence,
+        overallWins: parsed.overallWins,
+        overallLosses: parsed.overallLosses,
+        matches: parsed.matches,
+        cached: false,
+        fetchedAt: new Date().toISOString(),
+      };
+    } finally {
+      clearTimeout(timer);
+      inflight.delete(key);
+    }
+  })();
+
+  inflight.set(key, promise);
+  return promise;
 }
 
 function normName(name) {
@@ -340,19 +393,20 @@ export async function computeTennisLinkH2H(player1, player2, { force = false } =
 
   const meetings = a.matches.filter((m) => isAgainst(m, player2.token, name2));
 
-  // Also pull from player2 side in case of parse gaps, merge by date+score+event
+  // Also pull from player2 side in case of parse gaps; key without score orientation.
   if (b?.matches) {
-    const keys = new Set(meetings.map((m) => `${m.date}|${m.score}|${m.eventName}|${m.round}`));
+    const keyOf = (m) => `${m.date}|${m.drawId ?? ""}|${m.eventName}|${m.round}`;
+    const keys = new Set(meetings.map(keyOf));
     for (const m of b.matches) {
       if (!isAgainst(m, player1.token, name1)) continue;
-      // Flip perspective to player1
       const flipped = {
         ...m,
         result: m.result === "Win" ? "Loss" : m.result === "Loss" ? "Win" : m.result,
         opponentName: name2,
         opponentToken: player2.token,
+        partner: null,
       };
-      const key = `${flipped.date}|${flipped.score}|${flipped.eventName}|${flipped.round}`;
+      const key = keyOf(flipped);
       if (!keys.has(key)) {
         keys.add(key);
         meetings.push(flipped);
