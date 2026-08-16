@@ -80,6 +80,34 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id);
+
+CREATE TABLE IF NOT EXISTS player_records (
+  token TEXT PRIMARY KEY,
+  name TEXT,
+  residence TEXT,
+  overall_wins INTEGER,
+  overall_losses INTEGER,
+  match_count INTEGER,
+  fetched_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS match_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_token TEXT NOT NULL,
+  date TEXT,
+  event_name TEXT,
+  round TEXT,
+  result TEXT,
+  score TEXT,
+  opponent_name TEXT,
+  opponent_token TEXT,
+  partner TEXT,
+  singles INTEGER DEFAULT 1,
+  draw_id INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_player ON match_results(player_token);
+CREATE INDEX IF NOT EXISTS idx_match_opponent ON match_results(opponent_token);
 `);
 
 export function upsertPlayer({ token, name, city, state }) {

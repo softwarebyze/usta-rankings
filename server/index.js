@@ -7,6 +7,8 @@ import { db, upsertPlayer } from "./db.js";
 import { searchPlayerAllYears } from "./search.js";
 import { enqueueScrape, resumeInterrupted } from "./scraper.js";
 import { renderOgCard, renderHomeOgCard } from "./og.js";
+import { rankingMeetings, findLocalPlayer } from "./rankingH2h.js";
+import { computeTennisLinkH2H, getPlayerMatchHistory } from "./playerRecords.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -126,6 +128,78 @@ app.get("/api/og.png", (_req, res) => {
     console.error("home og render failed:", err);
     res.status(500).end();
   }
+});
+
+/**
+ * Head-to-head match history from USTA TennisLink player records.
+ * Query: token1, token2 (encrypted TennisLink PlayerIDs from /api/search).
+ * Optional name1/name2/city1/state1/... for display + local ranking overlap.
+ */
+app.get("/api/h2h", async (req, res) => {
+  const token1 = String(req.query.token1 ?? req.query.player1 ?? "").trim();
+  const token2 = String(req.query.token2 ?? req.query.player2 ?? "").trim();
+  if (!token1 || !token2) {
+    return res.status(400).json({ error: "token1 and token2 are required" });
+  }
+  if (token1 === token2) {
+    return res.status(400).json({ error: "Pick two different players" });
+  }
+
+  const player1 = {
+    token: token1,
+    name: req.query.name1 || null,
+    city: req.query.city1 || null,
+    state: req.query.state1 || null,
+  };
+  const player2 = {
+    token: token2,
+    name: req.query.name2 || null,
+    city: req.query.city2 || null,
+    state: req.query.state2 || null,
+  };
+  const force = String(req.query.force || "") === "1";
+
+  try {
+    const matches = await computeTennisLinkH2H(player1, player2, { force });
+
+    const local1 = findLocalPlayer(player1);
+    const local2 = findLocalPlayer(player2);
+    let rankings = null;
+    if (local1 && local2) {
+      rankings = rankingMeetings(local1.id, local2.id);
+    }
+
+    res.json({
+      ...matches,
+      localPlayers: {
+        player1: local1 ? { id: local1.id, name: local1.name } : null,
+        player2: local2 ? { id: local2.id, name: local2.name } : null,
+      },
+      rankingMeetings: rankings,
+    });
+  } catch (err) {
+    console.error("h2h failed:", err);
+    res.status(502).json({ error: "Head-to-head lookup failed: " + (err?.message || err) });
+  }
+});
+
+/** Fetch/cache a single player's TennisLink match record. */
+app.get("/api/records/:token", async (req, res) => {
+  try {
+    const force = String(req.query.force || "") === "1";
+    const data = await getPlayerMatchHistory(req.params.token, { force });
+    res.json(data);
+  } catch (err) {
+    console.error("record fetch failed:", err);
+    res.status(502).json({ error: "Player record fetch failed: " + (err?.message || err) });
+  }
+});
+
+/** Ranking-list H2H for two locally scraped players. */
+app.get("/api/players/:id/h2h/:otherId", (req, res) => {
+  const data = rankingMeetings(req.params.id, req.params.otherId);
+  if (data.missing) return res.status(404).json({ error: "player not found" });
+  res.json(data);
 });
 
 // --- static frontend, with per-player OG meta injection ---

@@ -5,6 +5,7 @@ import App from "./App.jsx";
 import Home from "./pages/Home.jsx";
 import Player from "./pages/Player.jsx";
 import Compare from "./pages/Compare.jsx";
+import H2H from "./pages/H2H.jsx";
 import "./styles.css";
 
 const router = createBrowserRouter([
@@ -15,6 +16,7 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       { path: "player/:id", element: <Player /> },
       { path: "compare", element: <Compare /> },
+      { path: "h2h", element: <H2H /> },
     ],
   },
 ]);

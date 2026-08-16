@@ -3,7 +3,7 @@
 Search any USTA junior tennis player by name and rebuild their **complete ranking
 history** — every published sectional/national standing list, by age bracket
 (10s/12s/14s/16s/18s), charted over time with best-ever ranks per bracket, plus
-head-to-head comparison between players.
+ranking overlays and **head-to-head match history** between players.
 
 ## How it works (no headless browser!)
 
@@ -54,3 +54,5 @@ Zachary Ebenfeld (ListIDs 1626410/1682666/1756446 → ranks 75/63/88).
 - `POST /api/scrape` `{token, name, city, state, years}` → `{jobId, playerId}`
 - `GET /api/jobs/:id` → status/phase/progress
 - `GET /api/players` · `GET /api/players/:id` · `GET /api/players/:id/rankings`
+- `GET /api/h2h?token1=&token2=` → head-to-head match history from TennisLink player records (plus ranking-list meetings when both players are on file locally)
+- `GET /api/records/:token` → full TennisLink match record for one player (cached)
