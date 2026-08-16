@@ -80,6 +80,14 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id);
+
+CREATE TABLE IF NOT EXISTS utr_results_cache (
+  player_id TEXT NOT NULL,
+  year_key TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  fetched_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (player_id, year_key)
+);
 `);
 
 export function upsertPlayer({ token, name, city, state }) {

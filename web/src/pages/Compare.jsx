@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ageLabel } from "../lib.js";
 import RankChart from "../RankChart.jsx";
 
@@ -72,11 +73,15 @@ export default function Compare() {
     <>
       <section className="hero" style={{ paddingBottom: 6 }}>
         <h1>
-          Head <em>to</em> head.
+          Ranking <em>overlay.</em>
         </h1>
         <p className="lede">
           Overlay the ranking trajectories of any players on file (Combined lists). Build a player's history from
-          the search page first, then compare here.
+          the search page first, then compare here. For actual match scores between two players, use{" "}
+          <Link to="/h2h" style={{ color: "var(--ball)" }}>
+            Match H2H
+          </Link>
+          .
         </p>
       </section>
 
