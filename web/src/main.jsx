@@ -17,6 +17,7 @@ const router = createBrowserRouter([
       { path: "player/:id", element: <Player /> },
       { path: "compare", element: <Compare /> },
       { path: "h2h", element: <H2H /> },
+      { path: "h2h/:id1/:id2", element: <H2H /> },
     ],
   },
 ]);
