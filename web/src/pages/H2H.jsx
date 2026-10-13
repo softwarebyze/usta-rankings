@@ -1,12 +1,41 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, fmtDate, niceName } from "../lib.js";
+import { touchRecent } from "../recents.js";
+
+function yearsList(years) {
+  if (Array.isArray(years)) return years;
+  if (typeof years === "string" && years.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(years);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function upsertLocal(p) {
+  const d = await api("/api/players", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: p.token,
+      name: p.name || p.token,
+      city: p.city || null,
+      state: p.state || null,
+    }),
+  });
+  return d.player;
+}
 
 function PlayerPicker({ label, value, onChange }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState(null);
+  const years = value ? yearsList(value.years) : [];
 
   async function onSearch(e) {
     e.preventDefault();
@@ -37,7 +66,7 @@ function PlayerPicker({ label, value, onChange }) {
             <div className="result-name">{niceName(value.name)}</div>
             <div className="result-meta">
               {[value.city, value.state].filter(Boolean).join(", ")}
-              {value.years?.length ? ` · ranked ${value.years[0]}–${value.years[value.years.length - 1]}` : ""}
+              {years.length ? ` · ranked ${years[0]}–${years[years.length - 1]}` : ""}
             </div>
           </div>
           <button type="button" className="btn small" onClick={() => onChange(null)}>
@@ -121,7 +150,10 @@ function leadCopy(record, name1, name2) {
 }
 
 export default function H2H() {
-  const [params, setParams] = useSearchParams();
+  const { id1, id2 } = useParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [player1, setPlayer1] = useState(null);
   const [player2, setPlayer2] = useState(null);
   const [discipline, setDiscipline] = useState("all");
@@ -129,61 +161,133 @@ export default function H2H() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Old /h2h?token1=&token2=&name1=... links: upsert lightweight rows, then replace with /h2h/:id1/:id2.
   useEffect(() => {
+    if (id1 && id2) {
+      if (params.get("token1") || params.get("token2")) {
+        navigate(`/h2h/${id1}/${id2}`, { replace: true });
+      }
+      return;
+    }
     const t1 = params.get("token1");
     const t2 = params.get("token2");
-    if (t1 && !player1) {
-      setPlayer1({
-        token: t1,
-        name: params.get("name1") || t1,
-        city: params.get("city1") || null,
-        state: params.get("state1") || null,
-      });
+    if (!t1 && !t2) {
+      if (location.state?.player1) setPlayer1(location.state.player1);
+      if (location.state?.player2) setPlayer2(location.state.player2);
+      return;
     }
-    if (t2 && !player2) {
-      setPlayer2({
-        token: t2,
-        name: params.get("name2") || t2,
-        city: params.get("city2") || null,
-        state: params.get("state2") || null,
-      });
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [a, b] = await Promise.all([
+          t1
+            ? upsertLocal({
+                token: t1,
+                name: params.get("name1"),
+                city: params.get("city1"),
+                state: params.get("state1"),
+              })
+            : null,
+          t2
+            ? upsertLocal({
+                token: t2,
+                name: params.get("name2"),
+                city: params.get("city2"),
+                state: params.get("state2"),
+              })
+            : null,
+        ]);
+        if (cancelled) return;
+        if (a && b) {
+          navigate(`/h2h/${a.id}/${b.id}`, { replace: true });
+        } else {
+          if (a) setPlayer1(a);
+          if (b) setPlayer2(b);
+          navigate("/h2h", { replace: true, state: { player1: a, player2: b } });
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [id1, id2]);
 
-  const load = useCallback(
-    async (a, b, { force = false } = {}) => {
-      if (!a?.token || !b?.token) return;
+  const load = useCallback(async ({ force = false } = {}) => {
+    const a = id1 || player1?.id;
+    const b = id2 || player2?.id;
+    if (!a || !b) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await api(`/api/h2h/${a}/${b}${force ? "?force=1" : ""}`);
+      setData(d);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [id1, id2, player1?.id, player2?.id]);
+
+  useEffect(() => {
+    if (!id1 || !id2) return;
+    let cancelled = false;
+    (async () => {
       setLoading(true);
       setError(null);
       setData(null);
-      const qs = new URLSearchParams({
-        token1: a.token,
-        token2: b.token,
-      });
-      if (a.name) qs.set("name1", a.name);
-      if (b.name) qs.set("name2", b.name);
-      if (a.city) qs.set("city1", a.city);
-      if (b.city) qs.set("city2", b.city);
-      if (a.state) qs.set("state1", a.state);
-      if (b.state) qs.set("state2", b.state);
-      if (force) qs.set("force", "1");
       try {
-        const d = await api(`/api/h2h?${qs}`);
+        const [a, b] = await Promise.all([api(`/api/players/${id1}`), api(`/api/players/${id2}`)]);
+        if (cancelled) return;
+        setPlayer1(a.player);
+        setPlayer2(b.player);
+        touchRecent(a.player);
+        touchRecent(b.player);
+        const d = await api(`/api/h2h/${id1}/${id2}`);
+        if (cancelled) return;
         setData(d);
-        setParams(qs, { replace: true });
       } catch (err) {
-        setError(err.message);
+        if (!cancelled) setError(err.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    },
-    [setParams]
-  );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id1, id2]);
 
-  useEffect(() => {
-    if (player1?.token && player2?.token) load(player1, player2);
-  }, [player1?.token, player2?.token]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function selectPlayer(which, picked) {
+    if (!picked) {
+      const keep1 = which === 1 ? null : player1;
+      const keep2 = which === 2 ? null : player2;
+      setPlayer1(keep1);
+      setPlayer2(keep2);
+      setData(null);
+      setError(null);
+      navigate("/h2h", { replace: true, state: { player1: keep1, player2: keep2 } });
+      return;
+    }
+    setError(null);
+    try {
+      const player = await upsertLocal(picked);
+      const next1 = which === 1 ? player : player1;
+      const next2 = which === 2 ? player : player2;
+      if (which === 1) setPlayer1(player);
+      else setPlayer2(player);
+      if (next1?.id && next2?.id) {
+        if (next1.id === next2.id) {
+          setError("Pick two different players");
+          return;
+        }
+        navigate(`/h2h/${next1.id}/${next2.id}`);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   const filteredMatches = useMemo(() => {
     const list = data?.matches || [];
@@ -216,18 +320,18 @@ export default function H2H() {
       <section className="panel">
         <h2>Pick players</h2>
         <div className="h2h-pick-grid">
-          <PlayerPicker label="Player 1" value={player1} onChange={setPlayer1} />
+          <PlayerPicker label="Player 1" value={player1} onChange={(p) => selectPlayer(1, p)} />
           <div className="h2h-vs" aria-hidden>
             VS
           </div>
-          <PlayerPicker label="Player 2" value={player2} onChange={setPlayer2} />
+          <PlayerPicker label="Player 2" value={player2} onChange={(p) => selectPlayer(2, p)} />
         </div>
         {player1 && player2 && (
           <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn solid" disabled={loading} onClick={() => load(player1, player2)}>
+            <button className="btn solid" disabled={loading} onClick={() => load()}>
               {loading ? "Loading TennisLink records…" : "Refresh head to head"}
             </button>
-            <button className="btn" disabled={loading} onClick={() => load(player1, player2, { force: true })}>
+            <button className="btn" disabled={loading} onClick={() => load({ force: true })}>
               Force re-fetch
             </button>
           </div>

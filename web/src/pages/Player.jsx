@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, ageColor, ageLabel, fmtDate, niceName } from "../lib.js";
 import RankChart from "../RankChart.jsx";
+import { touchRecent } from "../recents.js";
 
 const VARIANTS = ["Combined", "Sectional", "National", "Other"];
 
@@ -110,6 +111,10 @@ export default function Player() {
       clearTimeout(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (player?.id) touchRecent(player);
+  }, [player]);
 
   const ageGroups = useMemo(
     () => [...new Set(rankings.map((r) => r.age_group))].sort(),

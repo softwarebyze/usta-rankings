@@ -58,6 +58,14 @@ app.get("/api/players", (_req, res) => {
   res.json({ players });
 });
 
+/** Lightweight upsert: store token/name/city/state without enqueueing a ranking scrape. */
+app.post("/api/players", (req, res) => {
+  const { token, name, city, state } = req.body ?? {};
+  if (!token || !name) return res.status(400).json({ error: "token and name required" });
+  const player = upsertPlayer({ token, name, city, state });
+  res.json({ player });
+});
+
 app.get("/api/players/:id", (req, res) => {
   const player = db.prepare(`SELECT * FROM players WHERE id = ?`).get(req.params.id);
   if (!player) return res.status(404).json({ error: "not found" });
@@ -130,10 +138,58 @@ app.get("/api/og.png", (_req, res) => {
   }
 });
 
+async function tennisLinkH2HPayload(player1, player2, { force = false } = {}) {
+  const matches = await computeTennisLinkH2H(
+    { token: player1.token, name: player1.name, city: player1.city, state: player1.state },
+    { token: player2.token, name: player2.name, city: player2.city, state: player2.state },
+    { force }
+  );
+  const local1 = player1.id ? player1 : findLocalPlayer(player1);
+  const local2 = player2.id ? player2 : findLocalPlayer(player2);
+  let rankings = null;
+  if (local1?.id && local2?.id) {
+    rankings = rankingMeetings(local1.id, local2.id);
+    if (rankings.missing) rankings = null;
+  }
+  return {
+    ...matches,
+    localPlayers: {
+      player1: local1?.id ? { id: local1.id, name: local1.name, city: local1.city, state: local1.state } : null,
+      player2: local2?.id ? { id: local2.id, name: local2.name, city: local2.city, state: local2.state } : null,
+    },
+    rankingMeetings: rankings,
+  };
+}
+
 /**
- * Head-to-head match history from USTA TennisLink player records.
- * Query: token1, token2 (encrypted TennisLink PlayerIDs from /api/search).
- * Optional name1/name2/city1/state1/... for display + local ranking overlap.
+ * Head-to-head by local player ids. Tokens stay in SQLite; the URL is /h2h/:id1/:id2.
+ */
+app.get("/api/h2h/:id1/:id2", async (req, res) => {
+  const id1 = Number(req.params.id1);
+  const id2 = Number(req.params.id2);
+  if (!Number.isInteger(id1) || !Number.isInteger(id2) || id1 <= 0 || id2 <= 0) {
+    return res.status(400).json({ error: "Two valid player ids are required" });
+  }
+  if (id1 === id2) {
+    return res.status(400).json({ error: "Pick two different players" });
+  }
+  const player1 = db.prepare(`SELECT * FROM players WHERE id = ?`).get(id1);
+  const player2 = db.prepare(`SELECT * FROM players WHERE id = ?`).get(id2);
+  if (!player1 || !player2) {
+    return res.status(404).json({ error: "player not found" });
+  }
+  const force = String(req.query.force || "") === "1";
+  try {
+    res.json(await tennisLinkH2HPayload(player1, player2, { force }));
+  } catch (err) {
+    console.error("h2h failed:", err);
+    res.status(502).json({ error: "Head-to-head lookup failed: " + (err?.message || err) });
+  }
+});
+
+/**
+ * Compatibility shim: token1/token2 query (encrypted TennisLink PlayerIDs).
+ * Prefer GET /api/h2h/:id1/:id2 for shareable links.
  */
 app.get("/api/h2h", async (req, res) => {
   const token1 = String(req.query.token1 ?? req.query.player1 ?? "").trim();
@@ -160,23 +216,7 @@ app.get("/api/h2h", async (req, res) => {
   const force = String(req.query.force || "") === "1";
 
   try {
-    const matches = await computeTennisLinkH2H(player1, player2, { force });
-
-    const local1 = findLocalPlayer(player1);
-    const local2 = findLocalPlayer(player2);
-    let rankings = null;
-    if (local1 && local2) {
-      rankings = rankingMeetings(local1.id, local2.id);
-    }
-
-    res.json({
-      ...matches,
-      localPlayers: {
-        player1: local1 ? { id: local1.id, name: local1.name } : null,
-        player2: local2 ? { id: local2.id, name: local2.name } : null,
-      },
-      rankingMeetings: rankings,
-    });
+    res.json(await tennisLinkH2HPayload(player1, player2, { force }));
   } catch (err) {
     console.error("h2h failed:", err);
     res.status(502).json({ error: "Head-to-head lookup failed: " + (err?.message || err) });

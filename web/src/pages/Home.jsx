@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib.js";
+import { getRecents } from "../recents.js";
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
-  const [players, setPlayers] = useState([]);
+  const [recents, setRecents] = useState([]);
   const [starting, setStarting] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api("/api/players").then((d) => setPlayers(d.players)).catch(() => {});
+    setRecents(getRecents());
   }, []);
 
   async function onSearch(e) {
@@ -106,10 +107,10 @@ export default function Home() {
         </section>
       )}
 
-      {players.length > 0 && (
+      {recents.length > 0 && (
         <section className="panel">
-          <h2>Players on file</h2>
-          {players.map((p) => (
+          <h2>Recently viewed</h2>
+          {recents.map((p) => (
             <div className="result-row" key={p.id}>
               <div>
                 <div className="result-name">
@@ -117,10 +118,7 @@ export default function Home() {
                     {p.name}
                   </Link>
                 </div>
-                <div className="result-meta">
-                  {p.city}, {p.state} — {p.snapshots} ranking snapshots
-                  {p.last_job_status === "running" && " · scraping now…"}
-                </div>
+                <div className="result-meta">{[p.city, p.state].filter(Boolean).join(", ")}</div>
               </div>
               <Link className="btn small" to={`/player/${p.id}`}>
                 View
