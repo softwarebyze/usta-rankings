@@ -133,10 +133,13 @@ async function runJob(job) {
   // Pruning rules keep this tractable (a season can have 600+ published lists):
   //  - once the player's gender is known, skip the other gender's divisions
   //  - National lists are only checked for (year, bracket) where a sectional hit exists
-  // Lists previously checked with found=0 are retried (covers skipped brackets and transient misses).
+  // found=1 => row extracted; found=2 => fetched, player not in it.
+  // Both are done and skipped on resume. found=0 means "not actually fetched"
+  // (pruned), so those are cheap to re-evaluate each run. This makes a scrape
+  // resumable: an autostopped machine no longer throws away all the misses.
   const alreadyChecked = new Set(
     db
-      .prepare(`SELECT list_id FROM checked_lists WHERE player_id=? AND found=1`)
+      .prepare(`SELECT list_id FROM checked_lists WHERE player_id=? AND found IN (1,2)`)
       .all(player.id)
       .map((r) => r.list_id)
   );
@@ -168,7 +171,7 @@ async function runJob(job) {
     );
 
   let found = db.prepare(`SELECT COUNT(*) c FROM rankings WHERE player_id=?`).get(player.id).c;
-  db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(queue.length, found, job.id);
+  db.prepare(`UPDATE scrape_jobs SET lists_total=?, rankings_found=? WHERE id=?`).run(listMeta.length, found, job.id);
   setPhase(job.id, "Scanning ranking lists");
 
   // Sectional hits per (year, bracket), seeded from previous runs.
@@ -187,7 +190,8 @@ async function runJob(job) {
      ON CONFLICT(player_id, list_id) DO UPDATE SET rank=excluded.rank, points=excluded.points`
   );
 
-  let checked = 0;
+  // Resume from previously-finished lists so progress is cumulative across runs.
+  let checked = listMeta.length - queue.length;
   const bump = () =>
     db.prepare(`UPDATE scrape_jobs SET lists_checked=?, rankings_found=? WHERE id=?`).run(checked, found, job.id);
 
@@ -221,7 +225,7 @@ async function runJob(job) {
           db.prepare(`UPDATE players SET gender=? WHERE id=?`).run(lockedGender, player.id);
         }
       }
-      markChecked.run(player.id, m.listId, row ? 1 : 0);
+      markChecked.run(player.id, m.listId, row ? 1 : 2);
       checked++;
       bump();
     }
