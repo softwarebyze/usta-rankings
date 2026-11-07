@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS match_results (
   score TEXT,
   opponent_name TEXT,
   opponent_token TEXT,
+  opponent_tokens TEXT,
   partner TEXT,
   singles INTEGER DEFAULT 1,
   draw_id INTEGER
@@ -109,6 +110,16 @@ CREATE TABLE IF NOT EXISTS match_results (
 CREATE INDEX IF NOT EXISTS idx_match_player ON match_results(player_token);
 CREATE INDEX IF NOT EXISTS idx_match_opponent ON match_results(opponent_token);
 `);
+
+// Lightweight migration for DBs created before opponent_tokens existed.
+try {
+  const cols = db.prepare(`PRAGMA table_info(match_results)`).all().map((c) => c.name);
+  if (cols.length && !cols.includes("opponent_tokens")) {
+    db.exec(`ALTER TABLE match_results ADD COLUMN opponent_tokens TEXT`);
+  }
+} catch {
+  /* ignore */
+}
 
 export function upsertPlayer({ token, name, city, state }) {
   db.prepare(

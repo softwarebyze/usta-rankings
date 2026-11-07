@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { api, fmtDate, niceName } from "../lib.js";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { api, fmtDate, h2hSlug, niceName, titleFromH2hSlug } from "../lib.js";
 
-function PlayerPicker({ label, value, onChange }) {
+function PlayerPicker({ label, value, onChange, prefetchStatus }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -39,6 +39,15 @@ function PlayerPicker({ label, value, onChange }) {
               {[value.city, value.state].filter(Boolean).join(", ")}
               {value.years?.length ? ` · ranked ${value.years[0]}–${value.years[value.years.length - 1]}` : ""}
             </div>
+            {prefetchStatus === "loading" && (
+              <div className="result-years">Warming TennisLink record…</div>
+            )}
+            {prefetchStatus === "ready" && <div className="result-years">Record ready</div>}
+            {prefetchStatus === "error" && (
+              <div className="result-years" style={{ color: "var(--clay)" }}>
+                Prefetch failed — will retry on compare
+              </div>
+            )}
           </div>
           <button type="button" className="btn small" onClick={() => onChange(null)}>
             Change
@@ -120,36 +129,71 @@ function leadCopy(record, name1, name2) {
   return `${name2} leads ${record.player2Wins}–${record.player1Wins}`;
 }
 
+function playerFromParams(params, side) {
+  const token = params.get(`t${side}`) || params.get(`token${side}`);
+  if (!token) return null;
+  return {
+    token,
+    name: params.get(`name${side}`) || params.get(`n${side}`) || token,
+    city: params.get(`city${side}`) || null,
+    state: params.get(`state${side}`) || null,
+  };
+}
+
 export default function H2H() {
-  const [params, setParams] = useSearchParams();
+  const { slug: routeSlug } = useParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const [player1, setPlayer1] = useState(null);
   const [player2, setPlayer2] = useState(null);
+  const [prefetch, setPrefetch] = useState({}); // token -> loading|ready|error
   const [discipline, setDiscipline] = useState("all");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const t1 = params.get("token1");
-    const t2 = params.get("token2");
-    if (t1 && !player1) {
-      setPlayer1({
-        token: t1,
-        name: params.get("name1") || t1,
-        city: params.get("city1") || null,
-        state: params.get("state1") || null,
-      });
-    }
-    if (t2 && !player2) {
-      setPlayer2({
-        token: t2,
-        name: params.get("name2") || t2,
-        city: params.get("city2") || null,
-        state: params.get("state2") || null,
-      });
-    }
+    const a = playerFromParams(params, 1);
+    const b = playerFromParams(params, 2);
+    if (a && !player1) setPlayer1(a);
+    if (b && !player2) setPlayer2(b);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const prefetchRecord = useCallback((player) => {
+    if (!player?.token) return;
+    const token = player.token;
+    setPrefetch((cur) => (cur[token] === "ready" || cur[token] === "loading" ? cur : { ...cur, [token]: "loading" }));
+    api(`/api/records?token=${encodeURIComponent(token)}`)
+      .then(() => setPrefetch((cur) => ({ ...cur, [token]: "ready" })))
+      .catch(() => setPrefetch((cur) => ({ ...cur, [token]: "error" })));
+  }, []);
+
+  function selectPlayer(side, player) {
+    if (side === 1) setPlayer1(player);
+    else setPlayer2(player);
+    if (player) prefetchRecord(player);
+  }
+
+  const syncUrl = useCallback(
+    (a, b) => {
+      if (!a?.token || !b?.token) return;
+      const slug = h2hSlug(a.name, b.name) || "matchup";
+      const qs = new URLSearchParams({
+        t1: a.token,
+        t2: b.token,
+        n1: niceName(a.name),
+        n2: niceName(b.name),
+      });
+      if (a.city) qs.set("city1", a.city);
+      if (b.city) qs.set("city2", b.city);
+      if (a.state) qs.set("state1", a.state);
+      if (b.state) qs.set("state2", b.state);
+      navigate(`/h2h/${slug}?${qs}`, { replace: true });
+      document.title = `${niceName(a.name)} vs ${niceName(b.name)} — Match History | Baseline`;
+    },
+    [navigate]
+  );
 
   const load = useCallback(
     async (a, b, { force = false } = {}) => {
@@ -158,11 +202,11 @@ export default function H2H() {
       setError(null);
       setData(null);
       const qs = new URLSearchParams({
-        token1: a.token,
-        token2: b.token,
+        t1: a.token,
+        t2: b.token,
+        name1: a.name || "",
+        name2: b.name || "",
       });
-      if (a.name) qs.set("name1", a.name);
-      if (b.name) qs.set("name2", b.name);
       if (a.city) qs.set("city1", a.city);
       if (b.city) qs.set("city2", b.city);
       if (a.state) qs.set("state1", a.state);
@@ -171,19 +215,33 @@ export default function H2H() {
       try {
         const d = await api(`/api/h2h?${qs}`);
         setData(d);
-        setParams(qs, { replace: true });
+        syncUrl(a, b);
+        setPrefetch((cur) => ({
+          ...cur,
+          [a.token]: "ready",
+          [b.token]: "ready",
+        }));
       } catch (err) {
         setError(err.message);
       } finally {
         setLoading(false);
       }
     },
-    [setParams]
+    [syncUrl]
   );
 
   useEffect(() => {
     if (player1?.token && player2?.token) load(player1, player2);
   }, [player1?.token, player2?.token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep a readable title even before both players are chosen
+  useEffect(() => {
+    if (player1 && player2) return;
+    const fromSlug = titleFromH2hSlug(routeSlug);
+    document.title = fromSlug
+      ? `${fromSlug} — Match History | Baseline`
+      : "Head to Head — Match History | Baseline";
+  }, [routeSlug, player1, player2]);
 
   const filteredMatches = useMemo(() => {
     const list = data?.matches || [];
@@ -196,6 +254,9 @@ export default function H2H() {
   const name2 = niceName(data?.player2?.name || player2?.name || "Player 2");
   const activeRecord =
     discipline === "singles" ? data?.singlesRecord : discipline === "doubles" ? data?.doublesRecord : data?.record;
+
+  const warmHint =
+    (player1 && prefetch[player1.token] === "loading") || (player2 && prefetch[player2.token] === "loading");
 
   return (
     <>
@@ -216,11 +277,21 @@ export default function H2H() {
       <section className="panel">
         <h2>Pick players</h2>
         <div className="h2h-pick-grid">
-          <PlayerPicker label="Player 1" value={player1} onChange={setPlayer1} />
+          <PlayerPicker
+            label="Player 1"
+            value={player1}
+            onChange={(p) => selectPlayer(1, p)}
+            prefetchStatus={player1 ? prefetch[player1.token] : null}
+          />
           <div className="h2h-vs" aria-hidden>
             VS
           </div>
-          <PlayerPicker label="Player 2" value={player2} onChange={setPlayer2} />
+          <PlayerPicker
+            label="Player 2"
+            value={player2}
+            onChange={(p) => selectPlayer(2, p)}
+            prefetchStatus={player2 ? prefetch[player2.token] : null}
+          />
         </div>
         {player1 && player2 && (
           <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -232,10 +303,10 @@ export default function H2H() {
             </button>
           </div>
         )}
-        {loading && (
+        {(loading || warmHint) && (
           <p className="search-hint" style={{ marginTop: 14 }}>
-            <b>Pulling full match records from TennisLink…</b> first load can take up to a minute per player; later
-            lookups are cached.
+            <b>{loading ? "Pulling full match records from TennisLink…" : "Prefetching records in the background…"}</b>{" "}
+            first load can take up to a minute per player; later lookups are cached.
           </p>
         )}
       </section>
@@ -258,7 +329,10 @@ export default function H2H() {
             </h2>
             <p className="h2h-lead">{leadCopy(activeRecord, name1, name2)}</p>
             <div className="result-meta" style={{ marginBottom: 14 }}>
-              {[data.player1?.overallRecord && `${name1} overall ${data.player1.overallRecord}`, data.player2?.overallRecord && `${name2} overall ${data.player2.overallRecord}`]
+              {[
+                data.player1?.overallRecord && `${name1} overall ${data.player1.overallRecord}`,
+                data.player2?.overallRecord && `${name2} overall ${data.player2.overallRecord}`,
+              ]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
@@ -268,14 +342,16 @@ export default function H2H() {
                 ["singles", "Singles"],
                 ["doubles", "Doubles"],
               ].map(([id, label]) => (
-                <span
+                <button
+                  type="button"
                   key={id}
                   className={`chip ${discipline === id ? "on" : ""}`}
+                  aria-pressed={discipline === id}
                   style={discipline === id ? { background: "#d8e63a", borderColor: "#d8e63a" } : {}}
                   onClick={() => setDiscipline(id)}
                 >
                   {label}
-                </span>
+                </button>
               ))}
             </div>
             <div className="bests" style={{ marginTop: 8 }}>
@@ -283,7 +359,10 @@ export default function H2H() {
               <RecordCard title="Singles" record={data.singlesRecord} name1={name1} name2={name2} />
               <RecordCard title="Doubles" record={data.doublesRecord} name1={name1} name2={name2} />
             </div>
-            <p className="chart-note">Match results via {data.source}{data.cached ? " (cached)" : ""}.</p>
+            <p className="chart-note">
+              Match results via {data.source}
+              {data.cached ? " (cached)" : ""}.
+            </p>
           </section>
 
           <section className="panel">
@@ -334,6 +413,9 @@ export default function H2H() {
                 On published USTA lists where both appear: {niceName(data.rankingMeetings.player1.name)} ranked ahead{" "}
                 {data.rankingMeetings.summary.player1Ahead}× · {niceName(data.rankingMeetings.player2.name)} ahead{" "}
                 {data.rankingMeetings.summary.player2Ahead}×
+                {data.rankingMeetings.summary.ties
+                  ? ` · tied ${data.rankingMeetings.summary.ties}×`
+                  : ""}
               </p>
               <div className="table-scroll">
                 <table className="snapshots">

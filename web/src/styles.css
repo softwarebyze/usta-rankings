@@ -159,7 +159,9 @@ body {
   border: 1.5px solid var(--court-line); color: var(--chalk-dim); background: transparent;
   transition: all 0.12s;
 }
+button.chip { font: inherit; }
 .chip.on { color: var(--ink); font-weight: 600; }
+.chip:focus-visible { outline: 2px solid var(--ball); outline-offset: 2px; }
 .chart-note { font-size: 12.5px; color: var(--chalk-dim); margin-top: 10px; }
 
 .rs-tooltip {
@@ -260,6 +262,7 @@ footer.colophon a { color: var(--chalk-dim); }
 }
 .h2h-hit:last-child { border-bottom: none; }
 .h2h-hit:hover { background: rgba(216, 230, 58, 0.08); }
+.h2h-hit:focus-visible { outline: 2px solid var(--ball); outline-offset: -2px; background: rgba(216, 230, 58, 0.1); }
 .h2h-lead {
   color: var(--chalk-dim); font-size: 16px; margin: -6px 0 18px;
   font-family: var(--serif); font-style: italic;
